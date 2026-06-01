@@ -47,6 +47,10 @@ android {
                 "**/libonnxruntime.so",
                 "**/libonnxruntime4j_jni.so",
             )
+            // QNN Hexagon skel libs (libQnnHtpV*Skel.so) are loaded onto the DSP
+            // from a filesystem path, so the native libs must be extracted at
+            // install rather than mmap'd from the APK. Harmless when QNN is unused.
+            useLegacyPackaging = true
         }
     }
 }
