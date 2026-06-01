@@ -11,11 +11,14 @@ extension SegmentTypeJson on SegmentType {
   }
 }
 
-String _fmt(double seconds) {
-  final totalSeconds = seconds.floor();
-  final minutes = totalSeconds ~/ 60;
-  final secs = totalSeconds % 60;
-  return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+String _fmtPrecise(double seconds) {
+  final total = seconds.floor();
+  final minutes = total ~/ 60;
+  final secs = total % 60;
+  final millis = ((seconds - total) * 1000).round();
+  return '${minutes.toString().padLeft(2, '0')}:'
+      '${secs.toString().padLeft(2, '0')}.'
+      '${millis.toString().padLeft(3, '0')}';
 }
 
 class Segment {
@@ -39,7 +42,8 @@ class Segment {
 
   double get durationSeconds => endSeconds - startSeconds;
 
-  String get timeRange => '${_fmt(startSeconds)} → ${_fmt(endSeconds)}';
+  String get timeRange =>
+      '${_fmtPrecise(startSeconds)} → ${_fmtPrecise(endSeconds)}';
 
   factory Segment.fromJson(Map<String, dynamic> json) {
     final start = (json['start_seconds'] as num?)?.toDouble() ??

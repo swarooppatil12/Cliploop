@@ -261,6 +261,7 @@ class VisualWaveformWidget extends StatelessWidget {
     required this.waveColor,
     this.height = 72,
     this.showPlayhead = true,
+    this.showTimeMarkers = true,
   });
 
   final List<double> waveformData;
@@ -270,6 +271,7 @@ class VisualWaveformWidget extends StatelessWidget {
   final Color waveColor;
   final double height;
   final bool showPlayhead;
+  final bool showTimeMarkers;
 
   void _handleTap(TapUpDetails details, BoxConstraints constraints) {
     if (durationSeconds <= 0) {
@@ -286,48 +288,58 @@ class VisualWaveformWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: height,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return GestureDetector(
-            onTapUp: (details) => _handleTap(details, constraints),
-            child: Stack(
-              alignment: Alignment.centerLeft,
-              clipBehavior: Clip.hardEdge,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceElevated,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.surfaceBorder),
-                  ),
-                ),
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _BarWaveformPainter(
-                      waveformData: waveformData,
-                      waveColor: waveColor,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showTimeMarkers && durationSeconds > 0) ...[
+          _TimeMarkers(durationSeconds: durationSeconds),
+          const SizedBox(height: 6),
+        ],
+        SizedBox(
+          height: height,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return GestureDetector(
+                onTapUp: (details) => _handleTap(details, constraints),
+                child: Stack(
+                  alignment: Alignment.centerLeft,
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.surfaceBorder),
+                      ),
                     ),
-                  ),
-                ),
-                if (showPlayhead && durationSeconds > 0)
-                  Positioned(
-                    left: constraints.maxWidth *
-                        (position.inMilliseconds /
-                            (durationSeconds * 1000).clamp(1, double.infinity)),
-                    top: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 2,
-                      color: AppColors.textPrimary.withValues(alpha: 0.9),
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: _BarWaveformPainter(
+                          waveformData: waveformData,
+                          waveColor: waveColor,
+                        ),
+                      ),
                     ),
-                  ),
-              ],
-            ),
-          );
-        },
-      ),
+                    if (showPlayhead && durationSeconds > 0)
+                      Positioned(
+                        left: constraints.maxWidth *
+                            (position.inMilliseconds /
+                                (durationSeconds * 1000)
+                                    .clamp(1, double.infinity)),
+                        top: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 2,
+                          color: AppColors.textPrimary.withValues(alpha: 0.9),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

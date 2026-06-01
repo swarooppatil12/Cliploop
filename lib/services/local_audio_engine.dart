@@ -2363,28 +2363,37 @@ class LocalAudioEngine {
   }
 
   void _logVocalModelOutput(String rawLog) {
-    debugPrint(rawLog);
+    if (!kDebugMode || rawLog.isEmpty) {
+      return;
+    }
+
+    for (final line in rawLog.split('\n')) {
+      debugPrint('[CliploopsPipeline] $line');
+    }
   }
 
-  /// Bold timing summary for `flutter run` / Xcode console after ML + SVAD finish.
+  /// Timing summary for `flutter run` / Xcode console after ML + SVAD finish.
   void _logScanTimingComplete({
     required String methodLabel,
     required Duration total,
     required Duration mlSeparation,
     required Duration svadAndStructure,
   }) {
+    if (!kDebugMode) {
+      return;
+    }
+
     final totalLabel = _formatScanDuration(total);
     final mlLabel = _formatScanDuration(mlSeparation);
     final svadLabel = _formatScanDuration(svadAndStructure);
+    const tag = '[CliploopsTiming]';
 
     debugPrint('');
-    debugPrint(_terminalBold('══════════════════════════════════════════════════'));
-    debugPrint(
-      _terminalBold('$methodLabel scan completed in $totalLabel'),
-    );
-    debugPrint(_terminalBold('  ML separation:     $mlLabel'));
-    debugPrint(_terminalBold('  SVAD + structure:  $svadLabel'));
-    debugPrint(_terminalBold('══════════════════════════════════════════════════'));
+    debugPrint('$tag ══════════════════════════════════════════════════');
+    debugPrint('$tag $methodLabel scan completed in $totalLabel');
+    debugPrint('$tag   ML separation:     $mlLabel');
+    debugPrint('$tag   SVAD + structure:  $svadLabel');
+    debugPrint('$tag ══════════════════════════════════════════════════');
     debugPrint('');
   }
 
@@ -2401,8 +2410,6 @@ class LocalAudioEngine {
     }
     return '${duration.inMilliseconds}ms';
   }
-
-  String _terminalBold(String text) => '\x1B[1m$text\x1B[0m';
 
   String _formatTimestamp(double seconds) {
     final total = seconds.floor();

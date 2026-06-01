@@ -426,6 +426,9 @@ class MusicProvider extends ChangeNotifier {
       whisperProgress = 100;
       if (kDebugMode) {
         debugPrint('[WhisperJob] complete stems=${whisperResult?.stems.length ?? 0}');
+        debugPrint(
+          '[WhisperJob] see [CliploopsTiming] and [CliploopsPipeline] above for scan timing',
+        );
       }
       _notificationService.showProcessingComplete(
         file.name,

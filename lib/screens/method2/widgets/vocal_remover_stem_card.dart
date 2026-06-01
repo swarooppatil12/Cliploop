@@ -9,6 +9,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/text_styles.dart';
 import '../../../core/utils/stem_utils.dart';
+import '../../../core/utils/time_formatter.dart';
 import '../../../models/track_stem.dart';
 import '../../../providers/player_provider.dart';
 import '../../../services/file_service.dart';
@@ -127,31 +128,58 @@ class _VocalRemoverStemCardState extends State<VocalRemoverStemCard> {
               ],
             ),
             const SizedBox(height: 16),
-            SizedBox(
-              height: 72,
-              child: _showWaveformShimmer
-                  ? Shimmer.fromColors(
-                      baseColor: AppColors.surfaceBorder,
-                      highlightColor: AppColors.surfaceElevated,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceElevated,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    )
-                  : VisualWaveformWidget(
-                      waveformData: stem.waveformData,
-                      durationSeconds: widget.durationSeconds,
-                      position: isActiveStem
-                          ? player.currentPosition
-                          : Duration.zero,
-                      waveColor: color,
-                      onSeek: player.seek,
-                      height: 72,
-                      showPlayhead: isActiveStem,
+            if (_showWaveformShimmer)
+              SizedBox(
+                height: 72,
+                child: Shimmer.fromColors(
+                  baseColor: AppColors.surfaceBorder,
+                  highlightColor: AppColors.surfaceElevated,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(12),
                     ),
-            ),
+                  ),
+                ),
+              )
+            else
+              VisualWaveformWidget(
+                waveformData: stem.waveformData,
+                durationSeconds: widget.durationSeconds,
+                position: isActiveStem
+                    ? player.currentPosition
+                    : Duration.zero,
+                waveColor: color,
+                onSeek: player.seek,
+                height: 56,
+                showPlayhead: isActiveStem,
+              ),
+            if (isActiveStem && widget.durationSeconds > 0) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    TimeFormatter.formatDuration(
+                      player.currentPosition.inSeconds,
+                    ),
+                    style: AppTextStyles.mono.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    TimeFormatter.formatDuration(
+                      widget.durationSeconds.round(),
+                    ),
+                    style: AppTextStyles.mono.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               children: [

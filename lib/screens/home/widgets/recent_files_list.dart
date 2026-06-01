@@ -170,7 +170,10 @@ class RecentFilesList extends StatelessWidget {
                                   ),
                                   confirmDismiss: (_) =>
                                       _confirmDelete(context, file),
-                                  child: ListTile(
+                                  child: Material(
+                                    color: AppColors.surfaceElevated,
+                                    borderRadius: BorderRadius.circular(14),
+                                    child: ListTile(
                                     onTap: () {
                                       Navigator.pop(context);
                                       unawaited(_selectFile(context, file));
@@ -183,7 +186,6 @@ class RecentFilesList extends StatelessWidget {
                                             : AppColors.surfaceBorder,
                                       ),
                                     ),
-                                    tileColor: AppColors.surfaceElevated,
                                     leading: Icon(
                                       Icons.audiotrack_rounded,
                                       color: selected
@@ -211,6 +213,7 @@ class RecentFilesList extends StatelessWidget {
                                         }
                                       },
                                     ),
+                                  ),
                                   ),
                                 );
                               },
