@@ -44,6 +44,13 @@ class UvrSeparationService {
   Float32List? _chunkR;
   Float32List? _inputFlat;
 
+  // --- timing instrumentation (debug only) ---
+  final Stopwatch _onnxRunWatch = Stopwatch();
+  final Stopwatch _stftWatch = Stopwatch();
+  final Stopwatch _istftWatch = Stopwatch();
+  int _onnxRunCount = 0;
+  int _sessionOpenMs = 0;
+
   Future<void> ensureReady({
     void Function(int downloadProgress)? onModelDownloadProgress,
   }) async {
@@ -58,6 +65,11 @@ class UvrSeparationService {
     void Function(int downloadProgress)? onModelDownloadProgress,
   }) async {
     onProgress?.call(24);
+    _onnxRunWatch.reset();
+    _stftWatch.reset();
+    _istftWatch.reset();
+    _onnxRunCount = 0;
+    final totalWatch = Stopwatch()..start();
     await _ensureSession(onDownloadProgress: onModelDownloadProgress);
     final shape = _shape!;
     onProgress?.call(28);
@@ -150,9 +162,32 @@ class UvrSeparationService {
       await scaleMonoWavInPlace(accompanimentOutPath, gain);
     }
 
+    totalWatch.stop();
     if (kDebugMode) {
+      final audioSec = totalLen / sampleRate;
+      final wallSec = totalWatch.elapsedMilliseconds / 1000.0;
+      final onnxMs = _onnxRunWatch.elapsedMilliseconds;
+      final stftMs = _stftWatch.elapsedMilliseconds;
+      final istftMs = _istftWatch.elapsedMilliseconds;
+      final dspMs = stftMs + istftMs;
+      final avgOnnx =
+          _onnxRunCount > 0 ? (onnxMs / _onnxRunCount).toStringAsFixed(1) : '0';
+      final rtf = wallSec > 0 ? (audioSec / wallSec).toStringAsFixed(2) : '∞';
+      String pct(int ms) =>
+          wallSec > 0 ? (ms / 10 / wallSec).toStringAsFixed(0) : '0';
       debugPrint(
         '[UVR] Done — peak=$peak len=$writePos',
+      );
+      debugPrint(
+        '[UVR][timing] audio=${audioSec.toStringAsFixed(1)}s '
+        'wall=${wallSec.toStringAsFixed(1)}s rtf=${rtf}x '
+        'providers=${await _uvrProviderLabel()} threads=$_uvrIntraOpThreads',
+      );
+      debugPrint(
+        '[UVR][timing] sessionOpen=${_sessionOpenMs}ms | '
+        'onnx=${onnxMs}ms (${pct(onnxMs)}%, $_onnxRunCount calls, ${avgOnnx}ms/call) | '
+        'dsp=${dspMs}ms (${pct(dspMs)}%: stft=${stftMs}ms istft=${istftMs}ms) | '
+        'other=${(totalWatch.elapsedMilliseconds - onnxMs - dspMs)}ms',
       );
     }
 
@@ -266,8 +301,10 @@ class UvrSeparationService {
     required int genSize,
     Float32List? inputFlat,
   }) async {
+    _stftWatch.start();
     final stftL = stftEngine.computeStft(leftChunk);
     final stftR = stftEngine.computeStft(rightChunk);
+    _stftWatch.stop();
 
     if (stftL.numFrames == 0) {
       return (Float32List(genSize), Float32List(genSize));
@@ -287,7 +324,10 @@ class UvrSeparationService {
     OrtValue? input;
     try {
       input = await OrtValue.fromList(flat, [1, shape.dimC, shape.dimF, useDimT]);
+      _onnxRunWatch.start();
       final result = await _session!.run({_inputName!: input});
+      _onnxRunWatch.stop();
+      _onnxRunCount++;
       try {
         final outputFlat = await _tensorToFloat32List(result.values.first);
         return _reconstructVocalPair(
@@ -341,8 +381,10 @@ class UvrSeparationService {
       useDimT: useDimT,
     );
 
+    _istftWatch.start();
     final rawL = stftEngine.computeIstft(specL);
     final rawR = stftEngine.computeIstft(specR);
+    _istftWatch.stop();
     return (_trimCrop(rawL, trim, genSize), _trimCrop(rawR, trim, genSize));
   }
 
@@ -426,7 +468,10 @@ class UvrSeparationService {
       onProgress: onDownloadProgress,
     );
 
+    final openWatch = Stopwatch()..start();
     _session = await _openSession(modelPath);
+    openWatch.stop();
+    _sessionOpenMs = openWatch.elapsedMilliseconds;
     _inputName = _session!.inputNames.first;
 
     final dimC = ProcessingConstants.uvrMdxnetDimC;
@@ -494,27 +539,54 @@ class UvrSeparationService {
     try {
       return await _ort.createSession(modelPath, options: options(providers));
     } catch (error) {
+      // An accelerator EP (QNN/Hexagon, CoreML) can fail to init (missing backend
+      // libs, unsupported device). Degrade gracefully rather than dropping
+      // straight to single-thread CPU: XNNPACK on Android, then CPU everywhere.
+      final fallback = Platform.isAndroid
+          ? [OrtProvider.XNNPACK, OrtProvider.CPU]
+          : [OrtProvider.CPU];
       if (kDebugMode) {
-        debugPrint('[UVR] session open failed ($providers), CPU fallback: $error');
+        debugPrint('[UVR] session open failed ($providers) -> $fallback: $error');
       }
-      return _ort.createSession(
-        modelPath,
-        options: options([OrtProvider.CPU]),
-      );
+      try {
+        return await _ort.createSession(modelPath, options: options(fallback));
+      } catch (_) {
+        return _ort.createSession(modelPath, options: options([OrtProvider.CPU]));
+      }
     }
   }
 
   Future<List<OrtProvider>> _uvrProviders() async {
-    final available = await _ort.getAvailableProviders();
+    // ORT >=1.24 reports providers (e.g. WEBGPU) that flutter_onnxruntime's enum
+    // can't parse, making getAvailableProviders() throw. Treat a failed query as
+    // "unknown" and fall back to the platform default rather than aborting.
+    List<OrtProvider> available;
+    try {
+      available = await _ort.getAvailableProviders();
+    } catch (error) {
+      if (kDebugMode) debugPrint('[UVR] getAvailableProviders failed: $error');
+      available = const <OrtProvider>[];
+    }
+    final unknown = available.isEmpty;
 
     if (Platform.isIOS &&
         !ProcessingConstants.uvrDartPreferCpuOnIos &&
         ProcessingConstants.uvrDartUseCoreMlOnIos &&
-        available.contains(OrtProvider.CORE_ML)) {
+        (unknown || available.contains(OrtProvider.CORE_ML))) {
       return [OrtProvider.CORE_ML, OrtProvider.CPU];
     }
 
-    if (Platform.isAndroid && available.contains(OrtProvider.XNNPACK)) {
+    // Hexagon NPU via QNN EP (flag-gated). Ordered preference QNN -> XNNPACK ->
+    // CPU; if QNN init fails (backend libs absent), _openSession degrades to the
+    // XNNPACK/CPU ladder. Gated on a real availability check when the provider
+    // query succeeded; under 'unknown' we still try since the fallback is safe.
+    if (Platform.isAndroid &&
+        ProcessingConstants.uvrUseQnnOnAndroid &&
+        (unknown || available.contains(OrtProvider.QNN))) {
+      return [OrtProvider.QNN, OrtProvider.XNNPACK, OrtProvider.CPU];
+    }
+
+    if (Platform.isAndroid && (unknown || available.contains(OrtProvider.XNNPACK))) {
       return [OrtProvider.XNNPACK, OrtProvider.CPU];
     }
 

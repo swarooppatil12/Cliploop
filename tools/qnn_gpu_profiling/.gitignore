@@ -1,0 +1,6 @@
+# Downloaded models and run artifacts — do not commit (large/ephemeral)
+*.onnx
+*.npy
+.jobids
+.agejobs
+__pycache__/

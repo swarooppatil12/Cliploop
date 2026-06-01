@@ -224,6 +224,13 @@ class ProcessingConstants {
   /// Use Core ML execution provider when available on iOS.
   static const bool uvrDartUseCoreMlOnIos = true;
 
+  /// Use the QNN (Hexagon NPU) execution provider on Android when available.
+  /// Requires the QNN-enabled ORT (onnxruntime-android-qnn) AND the Qualcomm
+  /// QAIRT backend libs (libQnnHtp.so + Hexagon vNN skels) bundled in jniLibs.
+  /// Keep false until those are in place — provider falls back to XNNPACK/CPU.
+  /// AI Hub validation on sm8850: ~44x faster, 42.7 dB SDR vs FP32.
+  static const bool uvrUseQnnOnAndroid = false;
+
   /// Structure analysis uses mix_mono − vocal_mono (not the separated inst file)
   /// so vocal/instrumental ratios stay correct regardless of stem normalization.
   static const bool structureUseMixMinusVocal = true;
