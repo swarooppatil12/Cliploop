@@ -544,8 +544,9 @@ class LocalAudioEngine {
       'cliploops_${_uuid.v4()}.wav',
     );
 
+    // Force 16-bit PCM: the separation WAV reader only supports pcm_s16le.
     final command =
-        '-y -i "$inputPath" -ac 2 -ar ${ProcessingConstants.defaultSampleRate} "$wavPath"';
+        '-y -i "$inputPath" -ac 2 -ar ${ProcessingConstants.defaultSampleRate} -c:a pcm_s16le "$wavPath"';
     final session = await FFmpegKit.execute(command);
     final returnCode = await session.getReturnCode();
 
@@ -604,8 +605,9 @@ class LocalAudioEngine {
       'cliploops_${_uuid.v4()}.wav',
     );
 
+    // Force 16-bit PCM: the separation WAV reader only supports pcm_s16le.
     final command =
-        '-y -i "$inputPath" -ac 2 -ar ${ProcessingConstants.defaultSampleRate} "$wavPath"';
+        '-y -i "$inputPath" -ac 2 -ar ${ProcessingConstants.defaultSampleRate} -c:a pcm_s16le "$wavPath"';
     final session = await FFmpegKit.execute(command);
     final returnCode = await session.getReturnCode();
 

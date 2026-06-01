@@ -493,6 +493,9 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> _bootstrap() async {
     try {
+      // path_provider's JNI bridge isn't attached during the warm-up frame;
+      // wait for it before any directory access to avoid a SIGSEGV.
+      await _fileService.ensureStorageReady();
       await _fileService.tracksDirectory();
       await _refreshRecentFiles();
       await _restoreSelectedFile();

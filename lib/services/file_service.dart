@@ -214,6 +214,26 @@ class FileService {
 
   Future<Directory> tracksDirectory() => _tracksDirectory();
 
+  /// Waits until `path_provider`'s JNI bridge is attached before any real
+  /// directory access. On Android, `path_provider_android` calls into
+  /// `package:jni`, which is not ready during the warm-up frame — touching it
+  /// then throws "No JNI instance is available" and corrupts the JNI env,
+  /// hard-crashing the process (SIGSEGV in libdartjni.so / FindClass).
+  /// Yielding off the frame and retrying lets the engine finish attaching.
+  Future<void> ensureStorageReady() async {
+    Object? lastError;
+    for (var attempt = 0; attempt < 40; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      try {
+        await getApplicationDocumentsDirectory();
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw StateError('path_provider not ready after retries: $lastError');
+  }
+
   bool isStoredInApp(String path) => _isUnderAppTracks(path);
 
   Future<File> _selectedFileCacheFile() async {
