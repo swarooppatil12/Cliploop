@@ -1,0 +1,43 @@
+name: cliploop_highlights
+description: >
+  On-device music source separation (UVR MDX-Net) and song highlight detection
+  (prelude / interlude / postlude). Hexagon NPU accelerated on Android via the
+  TFLite QNN delegate; Core ML on iOS. UI-free, drop-in.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.12.0
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Inference: ONNX (iOS Core ML / Android XNNPACK fallback). Android NPU path
+  # uses TFLite + QNN delegate wired natively in this plugin.
+  flutter_onnxruntime: ^1.7.1
+  # Audio decode to 16-bit PCM WAV.
+  ffmpeg_kit_flutter_new_min: ^3.1.0
+  # STFT/ISTFT for the spectrogram model I/O.
+  fftea: ^1.5.0+1
+  path_provider: ^2.1.2
+  uuid: ^4.3.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+# Pin path_provider_android to the method-channel line (the >=2.3.0 package:jni
+# path crashes during the Flutter warm-up frame on Android).
+dependency_overrides:
+  path_provider_android: '>=2.2.0 <2.3.0'
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.cliploop.highlights
+        pluginClass: CliploopHighlightsPlugin
+      ios:
+        pluginClass: CliploopHighlightsPlugin

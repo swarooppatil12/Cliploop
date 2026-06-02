@@ -1,0 +1,3 @@
+android/src/main/assets/*.tflite
+.dart_tool/
+build/
