@@ -65,6 +65,17 @@ class ProcessingConstants {
 
   static const String defaultMethod2VocalModel = 'silero-vad';
 
+  /// Use Silero neural VAD for structure detection. OFF: with clean separated
+  /// vocals, energy thresholding on the vocals stem (_detectVocalRegionsOnStem)
+  /// is sufficient for prelude/interlude/postlude position logic — and avoids the
+  /// Silero model download (which otherwise blocks the pipeline on first run).
+  static const bool useSvadForStructure = false;
+
+  /// Generate per-stem waveform visualizations after separation. OFF: not needed
+  /// for highlight detection, and the native extractor can hang on the separated
+  /// WAVs — blocking the result from reaching the UI.
+  static const bool generateStemWaveforms = false;
+
   static const String sileroVadModelId = 'silero-vad';
 
   /// User-facing label for Method 2 voice detection (not generic "VAD").
@@ -224,12 +235,11 @@ class ProcessingConstants {
   /// Use Core ML execution provider when available on iOS.
   static const bool uvrDartUseCoreMlOnIos = true;
 
-  /// Use the QNN (Hexagon NPU) execution provider on Android when available.
-  /// Requires the QNN-enabled ORT (onnxruntime-android-qnn) AND the Qualcomm
-  /// QAIRT backend libs (libQnnHtp.so + Hexagon vNN skels) bundled in jniLibs.
-  /// Keep false until those are in place — provider falls back to XNNPACK/CPU.
-  /// AI Hub validation on sm8850: ~44x faster, 42.7 dB SDR vs FP32.
-  static const bool uvrUseQnnOnAndroid = false;
+  /// Run UVR MDX-Net on the Hexagon NPU via TFLite + QNN delegate (Android).
+  /// Per-chunk inference goes through QnnMdxRuntime (native); if init fails the
+  /// pipeline transparently falls back to the ONNX (XNNPACK/CPU) path.
+  /// On-device (S26 Ultra / sm8850): ~63 ms/call = ~29x faster than CPU.
+  static const bool uvrUseQnnOnAndroid = true;
 
   /// Structure analysis uses mix_mono − vocal_mono (not the separated inst file)
   /// so vocal/instrumental ratios stay correct regardless of stem normalization.

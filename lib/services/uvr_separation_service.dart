@@ -8,6 +8,7 @@ import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import '../core/constants/processing_constants.dart';
 import '../models/separation_file_result.dart';
 import 'ml_model_service.dart';
+import 'qnn_mdx_runtime.dart';
 import 'spleeter_stft.dart';
 import 'wav_stream_io.dart';
 
@@ -38,6 +39,7 @@ class UvrSeparationService {
   OnnxRuntime get _ort => _runtime ??= OnnxRuntime();
   OrtSession? _session;
   String? _inputName;
+  bool _useQnn = false;
   _UvrModelShape? _shape;
   SpleeterStft? _stftEngine;
   Float32List? _chunkL;
@@ -321,6 +323,32 @@ class UvrSeparationService {
     final flat = inputFlat ?? Float32List(shape.dimC * shape.dimF * useDimT);
     _writeUvrInput(flat, stftL, stftR, shape, useDimT);
 
+    // Hexagon NPU path: send the flat input tensor to the native TFLite+QNN
+    // interpreter; same [1,4,F,T] layout as ONNX, so reconstruction is identical.
+    if (_useQnn) {
+      try {
+        _onnxRunWatch.start();
+        final outputFlat = await QnnMdxRuntime.instance.run(flat);
+        _onnxRunWatch.stop();
+        _onnxRunCount++;
+        if (outputFlat == null) {
+          if (kDebugMode) debugPrint('[UVR] QNN run returned null');
+          return (Float32List(genSize), Float32List(genSize));
+        }
+        return _reconstructVocalPair(
+          outputFlat: outputFlat,
+          stftEngine: stftEngine,
+          shape: shape,
+          trim: trim,
+          genSize: genSize,
+          useDimT: useDimT,
+        );
+      } catch (e) {
+        if (kDebugMode) debugPrint('[UVR] QNN error: $e');
+        return (Float32List(genSize), Float32List(genSize));
+      }
+    }
+
     OrtValue? input;
     try {
       input = await OrtValue.fromList(flat, [1, shape.dimC, shape.dimF, useDimT]);
@@ -511,10 +539,19 @@ class UvrSeparationService {
       genSize: genSize,
     );
 
+    // Hexagon NPU (TFLite + QNN delegate) for the per-chunk inference. The ONNX
+    // session above still provides shape metadata + the fallback path; if QNN
+    // init fails we transparently use ONNX (XNNPACK/CPU).
+    _useQnn = false;
+    if (Platform.isAndroid && ProcessingConstants.uvrUseQnnOnAndroid) {
+      _useQnn = await QnnMdxRuntime.instance.init();
+    }
+
     if (kDebugMode) {
       debugPrint(
         '[UVR] ready: dimF=$dimF dimT=$dimT nFft=$nFft '
-        'chunkSize=$chunkSize genSize=$genSize center=true',
+        'chunkSize=$chunkSize genSize=$genSize center=true '
+        'inference=${_useQnn ? "QNN-NPU" : "ONNX"}',
       );
     }
   }
@@ -576,16 +613,9 @@ class UvrSeparationService {
       return [OrtProvider.CORE_ML, OrtProvider.CPU];
     }
 
-    // Hexagon NPU via QNN EP (flag-gated). Ordered preference QNN -> XNNPACK ->
-    // CPU; if QNN init fails (backend libs absent), _openSession degrades to the
-    // XNNPACK/CPU ladder. Gated on a real availability check when the provider
-    // query succeeded; under 'unknown' we still try since the fallback is safe.
-    if (Platform.isAndroid &&
-        ProcessingConstants.uvrUseQnnOnAndroid &&
-        (unknown || available.contains(OrtProvider.QNN))) {
-      return [OrtProvider.QNN, OrtProvider.XNNPACK, OrtProvider.CPU];
-    }
-
+    // NOTE: Hexagon NPU acceleration is NOT via the ONNX QNN EP — it's the TFLite
+    // QNN delegate (QnnMdxRuntime). This ONNX session is only the shape source +
+    // CPU fallback, so it just uses XNNPACK/CPU.
     if (Platform.isAndroid && (unknown || available.contains(OrtProvider.XNNPACK))) {
       return [OrtProvider.XNNPACK, OrtProvider.CPU];
     }

@@ -16,6 +16,10 @@
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
+        <!-- Allow the QNN HTP stub (libQnnHtpV*Stub.so) to dlopen Qualcomm's CDSP
+             FastRPC vendor lib to reach the Hexagon NPU. Vendor libs aren't on the
+             app linker namespace by default; this exposes it (API 31+). -->
+        <uses-native-library android:name="libcdsprpc.so" android:required="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
