@@ -206,6 +206,109 @@ class UvrSeparationService {
     );
   }
 
+  /// Streaming separation — emits each chunk's mono vocal + instrumental samples
+  /// via [onChunk] instead of writing WAVs. No disk I/O, no peak-normalization
+  /// pass (there's no file to scale; analysis uses relative/adaptive thresholds).
+  /// Per-chunk peak memory stays bounded (one window's two Float32Lists).
+  Future<({int sampleRate, int frameCount})> separateWavStreaming({
+    required String wavPath,
+    required void Function(
+            Float32List monoVocals, Float32List monoInstrumental, int startSample)
+        onChunk,
+    void Function(int progress)? onProgress,
+    void Function(int downloadProgress)? onModelDownloadProgress,
+  }) async {
+    onProgress?.call(24);
+    _onnxRunWatch.reset();
+    _stftWatch.reset();
+    _istftWatch.reset();
+    _onnxRunCount = 0;
+    final totalWatch = Stopwatch()..start();
+    await _ensureSession(onDownloadProgress: onModelDownloadProgress);
+    final shape = _shape!;
+    onProgress?.call(28);
+
+    final info = await openWavStream(File(wavPath));
+    if (info.sampleRate != sampleRate) {
+      throw Exception('Expected ${sampleRate}Hz WAV, got ${info.sampleRate}Hz.');
+    }
+    if (info.channels < 2) {
+      throw Exception('Expected stereo WAV for UVR separation.');
+    }
+
+    _initProcessingBuffers(shape);
+
+    final totalLen = info.frameCount;
+    var margin = sampleRate * _outerOverlapSeconds();
+    var outerChunk = _outerChunkSeconds() * sampleRate;
+    if (totalLen < outerChunk) {
+      outerChunk = totalLen;
+    }
+    if (margin > outerChunk ~/ 2) {
+      margin = outerChunk ~/ 2;
+    }
+
+    final segments = _buildSegments(totalLen, outerChunk, margin);
+
+    if (kDebugMode) {
+      debugPrint(
+        '[UVR] streaming MDXNET — ${segments.length} windows, $totalLen frames, '
+        'providers=${await _uvrProviderLabel()}',
+      );
+    }
+
+    onProgress?.call(32);
+
+    var writePos = 0;
+    for (var si = 0; si < segments.length; si++) {
+      final (segStart, segEnd) = segments[si];
+      final segFrames = segEnd - segStart;
+      final stereo = await readWavStereoWindow(info, segStart, segFrames);
+
+      final out = await _processStereoWindow(
+        left: stereo.left,
+        right: stereo.right,
+        shape: shape,
+      );
+
+      final copyStart = si == 0 ? 0 : margin;
+      final copyEnd =
+          si == segments.length - 1 ? out.left.length : out.left.length - margin;
+      final len = copyEnd - copyStart;
+      if (len > 0) {
+        final monoVocals = Float32List(len);
+        final monoInstrumental = Float32List(len);
+        for (var i = 0; i < len; i++) {
+          final src = copyStart + i;
+          monoVocals[i] = (out.left[src] + out.right[src]) * 0.5;
+          final instL = stereo.left[src] - out.left[src];
+          final instR = stereo.right[src] - out.right[src];
+          monoInstrumental[i] = (instL + instR) * 0.5;
+        }
+        onChunk(monoVocals, monoInstrumental, writePos);
+        writePos += len;
+      }
+
+      onProgress?.call(32 + ((si + 1) * 40 ~/ segments.length));
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    totalWatch.stop();
+    if (kDebugMode) {
+      final wallSec = totalWatch.elapsedMilliseconds / 1000.0;
+      final rtf = wallSec > 0 ? (totalLen / sampleRate / wallSec).toStringAsFixed(2) : '∞';
+      debugPrint(
+        '[UVR][timing] streaming audio=${(totalLen / sampleRate).toStringAsFixed(1)}s '
+        'wall=${wallSec.toStringAsFixed(1)}s rtf=${rtf}x '
+        'onnx=${_onnxRunWatch.elapsedMilliseconds}ms ($_onnxRunCount calls) '
+        'providers=${await _uvrProviderLabel()}',
+      );
+    }
+
+    onProgress?.call(76);
+    return (sampleRate: sampleRate, frameCount: info.frameCount);
+  }
+
   void _initProcessingBuffers(_UvrModelShape shape) {
     _stftEngine ??= SpleeterStft(
       SpleeterStftConfig(

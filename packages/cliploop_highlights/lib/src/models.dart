@@ -37,6 +37,28 @@ class SeparationStems {
       'SeparationStems(backend: $backend, ${wallMs}ms, ${durationSeconds.toStringAsFixed(1)}s)';
 }
 
+/// Result of a streaming separation (no stem files written — samples were
+/// delivered per-chunk via the callback).
+class SeparationStreamResult {
+  const SeparationStreamResult({
+    required this.sampleRate,
+    required this.frameCount,
+    required this.backend,
+    required this.wallMs,
+  });
+
+  final int sampleRate;
+  final int frameCount;
+  final SeparationBackend backend;
+  final int wallMs;
+
+  double get durationSeconds => frameCount / sampleRate;
+
+  @override
+  String toString() =>
+      'SeparationStreamResult(backend: $backend, ${wallMs}ms, ${durationSeconds.toStringAsFixed(1)}s)';
+}
+
 /// A detected non-vocal highlight section of a song.
 enum SongSectionType { prelude, interlude, postlude }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -137,6 +138,109 @@ class SeparationEngine {
     );
   }
 
+  /// Streaming variant: no stem files. Decode on main; the heavy separation runs
+  /// in the isolate and streams each chunk's mono vocal + instrumental samples
+  /// back over the SendPort to [onChunk] on the main isolate.
+  Future<SeparationStreamResult> separateStreaming(
+    String audioPath, {
+    required void Function(
+            Float32List vocChunk, Float32List instChunk, int chunkStartSample)
+        onChunk,
+    void Function(double progress)? onProgress,
+  }) async {
+    if (!await File(audioPath).exists()) {
+      throw ArgumentError('cliploop_highlights: file not found — $audioPath');
+    }
+    final sw = Stopwatch()..start();
+    final decoded = await decodeToWav16(audioPath); // ffmpeg on main isolate
+    try {
+      final done = await _separateStream(decoded.path, onChunk, onProgress);
+      sw.stop();
+      return SeparationStreamResult(
+        sampleRate: done.sampleRate,
+        frameCount: done.frameCount,
+        backend: _backend(done.usedQnn),
+        wallMs: sw.elapsedMilliseconds,
+      );
+    } finally {
+      if (decoded.isTemporary) {
+        try {
+          await File(decoded.path).delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<_StreamDone> _separateStream(
+    String inWav,
+    void Function(Float32List, Float32List, int) onChunk,
+    void Function(double progress)? onProgress,
+  ) async {
+    final token = RootIsolateToken.instance;
+    if (token == null) {
+      return _runStreaming(inWav, onChunk, onProgress);
+    }
+
+    final rp = ReceivePort();
+    final completer = Completer<_StreamDone>();
+    void fail(Object e) {
+      if (!completer.isCompleted) completer.completeError(e);
+      rp.close();
+    }
+
+    rp.listen((dynamic msg) {
+      if (msg is double) {
+        onProgress?.call(msg);
+      } else if (msg is _ChunkMsg) {
+        onChunk(msg.voc, msg.inst, msg.start);
+      } else if (msg is _StreamDone) {
+        if (!completer.isCompleted) completer.complete(msg);
+        rp.close();
+      } else if (msg is List) {
+        fail(Exception(msg.isNotEmpty ? msg.last.toString() : 'separation failed'));
+      } else if (msg == null) {
+        fail(Exception('cliploop_highlights: streaming isolate exited unexpectedly'));
+      }
+    });
+
+    final isolate = await Isolate.spawn(
+      _streamEntry,
+      _StreamRequest(token, inWav, rp.sendPort),
+      onError: rp.sendPort,
+      onExit: rp.sendPort,
+      errorsAreFatal: true,
+      debugName: 'cliploop_separation_stream',
+    );
+    return completer.future.whenComplete(isolate.kill);
+  }
+
+  static Future<void> _streamEntry(_StreamRequest req) async {
+    BackgroundIsolateBinaryMessenger.ensureInitialized(req.token);
+    final done = await _runStreaming(
+      req.inWav,
+      (voc, inst, start) => req.send.send(_ChunkMsg(voc, inst, start)),
+      (p) => req.send.send(p),
+    );
+    req.send.send(done);
+  }
+
+  static Future<_StreamDone> _runStreaming(
+    String inWav,
+    void Function(Float32List, Float32List, int) onChunk,
+    void Function(double progress)? onProgress,
+  ) async {
+    final res = await UvrSeparationService.instance.separateWavStreaming(
+      wavPath: inWav,
+      onChunk: onChunk,
+      onProgress: (p) => onProgress?.call(p.clamp(0, 100) / 100.0),
+    );
+    return _StreamDone(
+      sampleRate: res.sampleRate,
+      frameCount: res.frameCount,
+      usedQnn: UvrSeparationService.instance.usingQnn,
+    );
+  }
+
   SeparationBackend _backend(bool usedQnn) {
     if (Platform.isAndroid) {
       return usedQnn ? SeparationBackend.hexagonNpu : SeparationBackend.cpu;
@@ -171,6 +275,35 @@ class _SepResult {
   });
   final String vocals;
   final String inst;
+  final int sampleRate;
+  final int frameCount;
+  final bool usedQnn;
+}
+
+// --- streaming-mode isolate messages ---
+
+class _StreamRequest {
+  const _StreamRequest(this.token, this.inWav, this.send);
+  final RootIsolateToken token;
+  final String inWav;
+  final SendPort send;
+}
+
+/// One separation chunk crossing the isolate boundary. The Float32Lists are
+/// copied by the SendPort (memory only — no disk). Bounded per-chunk.
+class _ChunkMsg {
+  const _ChunkMsg(this.voc, this.inst, this.start);
+  final Float32List voc;
+  final Float32List inst;
+  final int start;
+}
+
+class _StreamDone {
+  const _StreamDone({
+    required this.sampleRate,
+    required this.frameCount,
+    required this.usedQnn,
+  });
   final int sampleRate;
   final int frameCount;
   final bool usedQnn;

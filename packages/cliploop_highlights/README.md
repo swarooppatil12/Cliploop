@@ -10,7 +10,8 @@ On-device music **source separation** (UVR MDX-Net) and song **highlight detecti
 ## Status
 | Layer | API | State |
 |-------|-----|-------|
-| 1 — Separation | `CliploopSeparator.separate()` | ✅ ready |
+| 1 — Separation (file) | `CliploopSeparator.separate()` | ✅ ready |
+| 1 — Separation (streaming) | `CliploopSeparator.separateStreaming()` | ✅ ready |
 | 2 — Highlights | `CliploopHighlights.analyze()` | 🚧 separation wired; section detection porting (returns empty `sections` for now) |
 
 ## Install
@@ -45,12 +46,32 @@ print('${stems.backend} in ${stems.wallMs}ms');     // e.g. hexagonNpu in 17200m
 print(stems.vocalsPath);
 print(stems.instrumentalPath);
 
+// Layer 1 — streaming stems (no files; samples delivered per chunk)
+final result = await CliploopSeparator.separateStreaming(
+  '/path/song.mp3',
+  onChunk: (vocChunk, instChunk, startSample) {
+    // mono Float32 windows; e.g. accumulate RMS envelopes for section detection
+  },
+  onProgress: (p) => print('${(p * 100).round()}%'),
+);
+print('${result.backend} in ${result.wallMs}ms');
+
 // Layer 2 — highlights
 final h = await CliploopHighlights.analyze('/path/song.mp3');
 for (final s in h.sections) {
   print(s);  // "Interlude 1 · instrumental [66.1–90.0s]"
 }
 ```
+
+### File mode vs streaming mode
+- **`separate()` (file)** — writes vocals + instrumental WAVs to disk and returns
+  their paths, with peak normalization. Use when you need **playback, export, or
+  inspection** of the stems.
+- **`separateStreaming()` (streaming)** — delivers mono stem samples chunk-by-chunk
+  via `onChunk` with **no disk I/O** (no temp WAVs, no normalization pass). Use when
+  you only need **analysis-time access** to the samples (e.g. computing RMS
+  envelopes for your own section/highlight logic). Avoids the ~180 MB disk
+  round-trip that otherwise contends for DRAM bandwidth during inference.
 
 ## How it works
 1. Decode input → 16-bit stereo WAV (ffmpeg).
