@@ -49,7 +49,17 @@ class _UploadZoneState extends State<UploadZone>
     }
 
     final previousId = provider.selectedFile?.id;
-    await provider.pickAndLoadFile();
+    try {
+      await provider.pickAndLoadFile();
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not import audio: $error')),
+      );
+      return;
+    }
 
     if (!context.mounted) {
       return;

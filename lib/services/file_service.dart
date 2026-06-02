@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffprobe_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import '../core/constants/app_constants.dart';
 import '../core/utils/file_helper.dart';
 import '../models/music_file.dart';
+import 'android_paths_service.dart';
 
 class FileService {
   FileService({Uuid? uuid}) : _uuid = uuid ?? const Uuid();
@@ -217,14 +218,14 @@ class FileService {
   bool isStoredInApp(String path) => _isUnderAppTracks(path);
 
   Future<File> _selectedFileCacheFile() async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AndroidPathsService.instance.documentsDirectory();
     return File(
       FileHelper.joinPath(directory.path, AppConstants.selectedFileCacheFile),
     );
   }
 
   Future<File> _cacheFile() async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AndroidPathsService.instance.documentsDirectory();
     return File(FileHelper.joinPath(directory.path, AppConstants.recentFilesCacheFile));
   }
 
@@ -232,7 +233,7 @@ class FileService {
     if (_tracksRootPath != null) {
       return Directory(_tracksRootPath!);
     }
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AndroidPathsService.instance.documentsDirectory();
     final tracksDir = Directory(
       FileHelper.joinPath(directory.path, AppConstants.tracksCacheDir),
     );
@@ -242,7 +243,7 @@ class FileService {
   }
 
   Future<Directory> _stemsRootDirectory() async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AndroidPathsService.instance.documentsDirectory();
     final stemsDir = Directory(
       FileHelper.joinPath(directory.path, AppConstants.stemsCacheDir),
     );
@@ -258,6 +259,10 @@ class FileService {
       if (await downloads.parent.exists()) {
         return downloads;
       }
+      final documents = await AndroidPathsService.instance.documentsDirectory();
+      return Directory(
+        FileHelper.joinPath(documents.path, AppConstants.downloadsSubDir),
+      );
     }
 
     final downloads = await getDownloadsDirectory();
@@ -267,7 +272,7 @@ class FileService {
       );
     }
 
-    final documents = await getApplicationDocumentsDirectory();
+    final documents = await AndroidPathsService.instance.documentsDirectory();
     return Directory(
       FileHelper.joinPath(documents.path, AppConstants.downloadsSubDir),
     );
@@ -289,14 +294,17 @@ class FileService {
   }
 
   Future<int> _readDurationSeconds(String path) async {
-    final player = AudioPlayer();
     try {
-      final duration = await player.setFilePath(path).then((_) => player.duration);
-      return duration?.inSeconds ?? 0;
+      final session = await FFprobeKit.getMediaInformation(path, 5000);
+      final info = session.getMediaInformation();
+      final durationStr = info?.getDuration();
+      if (durationStr == null || durationStr.isEmpty) {
+        return 0;
+      }
+      final seconds = double.tryParse(durationStr);
+      return seconds?.round() ?? 0;
     } catch (_) {
       return 0;
-    } finally {
-      await player.dispose();
     }
   }
 }

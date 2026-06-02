@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/scheduler.dart';
 
 import '../core/constants/app_constants.dart';
 import '../core/constants/processing_constants.dart';
@@ -29,13 +28,7 @@ class MusicProvider extends ChangeNotifier {
   })  : _fileService = fileService ?? FileService(),
         _spleeterService = spleeterService ?? SpleeterService(),
         _whisperService = whisperService ?? WhisperService(),
-        _notificationService = notificationService ?? NotificationService() {
-    // path_provider_android uses JNI; calling it before the first frame crashes
-    // release builds on Android (SIGSEGV in libdartjni.so / FindClass).
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      unawaited(_bootstrap());
-    });
-  }
+        _notificationService = notificationService ?? NotificationService();
 
   final FileService _fileService;
   final SpleeterService _spleeterService;
@@ -162,6 +155,7 @@ class MusicProvider extends ChangeNotifier {
 
   /// Loads a track into the app library. Returns `true` when the song changed.
   Future<bool> loadFile(MusicFile file) async {
+    await ensureBootstrapped();
     final stored = _fileService.isStoredInApp(file.path)
         ? file
         : await _fileService.importToAppLibrary(
@@ -185,6 +179,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> pickAndLoadFile() async {
+    await ensureBootstrapped();
     final file = await _fileService.pickFile();
     if (file != null) {
       await loadFile(file);
@@ -218,6 +213,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> loadFileFromPath(String path) async {
+    await ensureBootstrapped();
     final file = File(path);
     if (!await file.exists()) {
       throw Exception('Shared audio file not found: $path');
@@ -493,6 +489,24 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> refreshRecentFiles() => _refreshRecentFiles();
+
+  Future<void>? _bootstrapFuture;
+  bool _bootstrapped = false;
+
+  /// Loads tracks dir + recent files once JNI / path_provider is safe (see [AppBootstrap]).
+  Future<void> ensureBootstrapped() {
+    return _bootstrapFuture ??= _bootstrapOnce();
+  }
+
+  bool get isBootstrapped => _bootstrapped;
+
+  Future<void> _bootstrapOnce() async {
+    if (_bootstrapped) {
+      return;
+    }
+    await _bootstrap();
+    _bootstrapped = true;
+  }
 
   Future<void> _bootstrap() async {
     try {

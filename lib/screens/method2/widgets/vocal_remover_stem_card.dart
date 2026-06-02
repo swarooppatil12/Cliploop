@@ -199,11 +199,7 @@ class _VocalRemoverStemCardState extends State<VocalRemoverStemCard> {
                             );
                             return;
                           }
-                          if (isPlayingStem) {
-                            player.pause();
-                          } else {
-                            unawaited(player.soloStem(stem.id));
-                          }
+                          unawaited(player.toggleStem(stem.id));
                         },
                   style: FilledButton.styleFrom(
                     backgroundColor: color,

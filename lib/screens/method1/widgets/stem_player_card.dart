@@ -145,11 +145,7 @@ class _StemPlayerCardState extends State<StemPlayerCard> {
                             ? null
                             : () {
                                 HapticFeedback.lightImpact();
-                                if (isPlayingStem) {
-                                  player.pause();
-                                } else {
-                                  unawaited(player.soloStem(stem.id));
-                                }
+                                unawaited(player.toggleStem(stem.id));
                               },
                         icon: Icon(
                           isPlayingStem ? Icons.pause_rounded : Icons.play_arrow_rounded,

@@ -60,6 +60,11 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.3
 
+# path_provider_android 2.3+ uses Dart JNI (libdartjni.so) which SIGSEGVs on
+# Android 16 / Samsung at plugin registration before JNIEnv is ready.
+dependency_overrides:
+  path_provider_android: 2.2.23
+
 flutter_launcher_icons:
   android: true
   ios: true
@@ -73,6 +78,10 @@ flutter_launcher_icons:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # LLDB attach over wireless iOS is slow and often times out (75s+ VM service
+  # discovery). Disabling keeps hot reload via Dart VM; use USB for breakpoints.
+  config:
+    enable-lldb-debugging: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

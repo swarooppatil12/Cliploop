@@ -218,6 +218,25 @@ class ProcessingConstants {
   /// Native sherpa-onnx UVR thread count (when native path is used).
   static const int uvrNativeNumThreads = 4;
 
+  /// Snapdragon — more threads + NNAPI (Hexagon NPU via Android NNAPI).
+  static const int uvrSnapdragonNativeThreads = 8;
+
+  /// Target max separation time on Snapdragon Android (full song).
+  static const int androidSeparationTargetSeconds = 60;
+
+  /// Provider try-order on Snapdragon: NNAPI → XNNPACK → CPU.
+  static const List<String> uvrSnapdragonProviderChain = [
+    'nnapi',
+    'xnnpack',
+    'cpu',
+  ];
+
+  /// Provider try-order on other Android devices.
+  static const List<String> uvrAndroidProviderChain = [
+    'xnnpack',
+    'cpu',
+  ];
+
   /// Prefer Core ML for UVR on iOS (Neural Engine — much faster than CPU).
   static const bool uvrDartPreferCpuOnIos = false;
 

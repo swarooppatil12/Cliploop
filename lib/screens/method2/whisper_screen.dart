@@ -386,7 +386,6 @@ class _WhisperScreenState extends State<WhisperScreen> {
   @override
   Widget build(BuildContext context) {
     final musicProvider = context.watch<MusicProvider>();
-    final playerProvider = context.watch<PlayerProvider>();
     final selectedFile = musicProvider.selectedFile;
     final result =
         musicProvider.hasValidWhisperResult ? musicProvider.whisperResult : null;
@@ -518,7 +517,6 @@ class _WhisperScreenState extends State<WhisperScreen> {
                         setState(() => _structureExpanded = value),
                     structureSegments: structureSegments,
                     durationSeconds: durationSeconds,
-                    playerPosition: playerProvider.currentPosition,
                     selectedSegmentId: _selectedSegment?.id,
                     vocalOutput: vocalOutput,
                     isBuildingGapless: _buildingGapless,
@@ -529,7 +527,6 @@ class _WhisperScreenState extends State<WhisperScreen> {
                     onSaveGapless:
                         _gaplessWavPath != null ? _saveGaplessMix : null,
                     onSegmentSelected: _selectSegment,
-                    onSeek: playerProvider.seek,
                   ),
                 ],
               ],
@@ -784,7 +781,6 @@ class _StructureExpansion extends StatelessWidget {
     required this.onExpansionChanged,
     required this.structureSegments,
     required this.durationSeconds,
-    required this.playerPosition,
     required this.selectedSegmentId,
     required this.vocalOutput,
     required this.isBuildingGapless,
@@ -793,14 +789,12 @@ class _StructureExpansion extends StatelessWidget {
     required this.onPlayGapless,
     required this.onSaveGapless,
     required this.onSegmentSelected,
-    required this.onSeek,
   });
 
   final bool expanded;
   final ValueChanged<bool> onExpansionChanged;
   final List<Segment> structureSegments;
   final double durationSeconds;
-  final Duration playerPosition;
   final String? selectedSegmentId;
   final VocalModelOutput? vocalOutput;
   final bool isBuildingGapless;
@@ -809,16 +803,16 @@ class _StructureExpansion extends StatelessWidget {
   final VoidCallback? onPlayGapless;
   final VoidCallback? onSaveGapless;
   final void Function(Segment segment, {bool autoPlay}) onSegmentSelected;
-  final ValueChanged<Duration> onSeek;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
+    return Material(
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.surfaceBorder),
+        side: const BorderSide(color: AppColors.surfaceBorder),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -839,14 +833,20 @@ class _StructureExpansion extends StatelessWidget {
                   StructureDetectionSummary(segments: structureSegments),
                   if (durationSeconds > 0) ...[
                     const SizedBox(height: 16),
-                    StructureTimeline(
-                      durationSeconds: durationSeconds,
-                      structureSegments: structureSegments,
-                      position: playerPosition,
-                      selectedSegmentId: selectedSegmentId,
-                      onSegmentSelected: (segment) =>
-                          onSegmentSelected(segment),
-                      onSeek: onSeek,
+                    Selector<PlayerProvider, Duration>(
+                      selector: (_, player) => player.currentPosition,
+                      builder: (context, position, _) {
+                        final player = context.read<PlayerProvider>();
+                        return StructureTimeline(
+                          durationSeconds: durationSeconds,
+                          structureSegments: structureSegments,
+                          position: position,
+                          selectedSegmentId: selectedSegmentId,
+                          onSegmentSelected: (segment) =>
+                              onSegmentSelected(segment),
+                          onSeek: player.seek,
+                        );
+                      },
                     ),
                   ],
                   const SizedBox(height: 16),

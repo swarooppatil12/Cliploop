@@ -19,8 +19,9 @@ import '../models/separation_result.dart';
 import '../models/track_stem.dart';
 import '../models/vocal_model_output.dart';
 import '../models/whisper_result.dart';
+import 'android_paths_service.dart';
 import 'gapless_mix_service.dart';
-import 'uvr_separation_service.dart';
+import 'mobile_separation_service.dart';
 import 'silero_vad_service.dart';
 import 'vocal_separation_engine.dart';
 import 'vocal_silence_service.dart';
@@ -510,7 +511,7 @@ class LocalAudioEngine {
   Future<void> _ensureSeparationReady({
     void Function(int downloadProgress)? onModelDownloadProgress,
   }) async {
-    await UvrSeparationService.instance.ensureReady(
+    await MobileSeparationService.instance.ensureReady(
       onModelDownloadProgress: onModelDownloadProgress,
     );
   }
@@ -521,7 +522,7 @@ class LocalAudioEngine {
     required String accompanimentOutPath,
     void Function(int progress)? onProgress,
   }) {
-    return UvrSeparationService.instance.separateWavToFiles(
+    return MobileSeparationService.instance.separateWavToFiles(
       wavPath: wavPath,
       vocalsOutPath: vocalsOutPath,
       accompanimentOutPath: accompanimentOutPath,
@@ -2580,7 +2581,7 @@ class LocalAudioEngine {
   }
 
   Future<Directory> _stemOutputDirectory(String jobId) async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AndroidPathsService.instance.documentsDirectory();
     final stemDirectory = Directory(
       FileHelper.joinPath(
         directory.path,

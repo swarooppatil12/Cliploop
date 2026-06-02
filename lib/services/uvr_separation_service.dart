@@ -43,6 +43,7 @@ class UvrSeparationService {
   Float32List? _chunkL;
   Float32List? _chunkR;
   Float32List? _inputFlat;
+  bool _preferSnapdragonAcceleration = false;
 
   Future<void> ensureReady({
     void Function(int downloadProgress)? onModelDownloadProgress,
@@ -56,7 +57,9 @@ class UvrSeparationService {
     required String accompanimentOutPath,
     void Function(int progress)? onProgress,
     void Function(int downloadProgress)? onModelDownloadProgress,
+    bool preferSnapdragonAcceleration = false,
   }) async {
+    _preferSnapdragonAcceleration = preferSnapdragonAcceleration;
     onProgress?.call(24);
     await _ensureSession(onDownloadProgress: onModelDownloadProgress);
     final shape = _shape!;
@@ -514,8 +517,14 @@ class UvrSeparationService {
       return [OrtProvider.CORE_ML, OrtProvider.CPU];
     }
 
-    if (Platform.isAndroid && available.contains(OrtProvider.XNNPACK)) {
-      return [OrtProvider.XNNPACK, OrtProvider.CPU];
+    if (Platform.isAndroid) {
+      if (_preferSnapdragonAcceleration &&
+          available.contains(OrtProvider.NNAPI)) {
+        return [OrtProvider.NNAPI, OrtProvider.XNNPACK, OrtProvider.CPU];
+      }
+      if (available.contains(OrtProvider.XNNPACK)) {
+        return [OrtProvider.XNNPACK, OrtProvider.CPU];
+      }
     }
 
     return [OrtProvider.CPU];

@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
-import 'package:provider/provider.dart';
 
 import '../../core/navigation/app_routes.dart';
 import '../../core/theme/colors.dart';
-import '../../providers/music_provider.dart';
-import '../../services/share_intent_service.dart';
 import '../../widgets/common/bottom_nav_bar.dart';
 import '../../widgets/common/custom_app_bar.dart';
 import 'widgets/method_shortcut_row.dart';
@@ -21,17 +17,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   static const _homeNavIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      ShareIntentService.instance.initialize(context.read<MusicProvider>());
-    });
-  }
 
   @override
   Widget build(BuildContext context) {

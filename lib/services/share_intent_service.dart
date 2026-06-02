@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 import '../core/utils/file_helper.dart';
@@ -29,21 +30,35 @@ class ShareIntentService with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addObserver(this);
 
-    ReceiveSharingIntent.instance.getInitialMedia().then((files) {
-      if (files.isEmpty) {
-        return;
-      }
-      unawaited(_handleSharedFiles(files, fromColdStart: true));
-      ReceiveSharingIntent.instance.reset();
-    });
+    unawaited(_initShareIntentHandlers());
+  }
 
-    _sharingSubscription =
-        ReceiveSharingIntent.instance.getMediaStream().listen((files) {
-      if (files.isEmpty) {
-        return;
+  Future<void> _initShareIntentHandlers() async {
+    try {
+      final files = await ReceiveSharingIntent.instance.getInitialMedia();
+      if (files.isNotEmpty) {
+        await _handleSharedFiles(files, fromColdStart: true);
+        await ReceiveSharingIntent.instance.reset();
       }
-      unawaited(_handleSharedFiles(files, fromColdStart: false));
-    });
+    } on MissingPluginException catch (error) {
+      debugPrint('[ShareIntent] plugin not ready yet: $error');
+    } catch (error, stackTrace) {
+      debugPrint('[ShareIntent] getInitialMedia failed: $error\n$stackTrace');
+    }
+
+    try {
+      _sharingSubscription =
+          ReceiveSharingIntent.instance.getMediaStream().listen((files) {
+        if (files.isEmpty) {
+          return;
+        }
+        unawaited(_handleSharedFiles(files, fromColdStart: false));
+      });
+    } on MissingPluginException catch (error) {
+      debugPrint('[ShareIntent] media stream unavailable: $error');
+    } catch (error, stackTrace) {
+      debugPrint('[ShareIntent] stream setup failed: $error\n$stackTrace');
+    }
   }
 
   @override

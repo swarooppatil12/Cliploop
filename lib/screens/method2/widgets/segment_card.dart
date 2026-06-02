@@ -110,15 +110,17 @@ class _SegmentCardState extends State<SegmentCard> {
             onPressed: widget.onPlay,
           ),
           const SizedBox(height: 8),
-          Material(
-            color: Colors.transparent,
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('Loop this segment', style: AppTextStyles.bodyLarge),
-              value: widget.loopEnabled,
-              activeThumbColor: AppColors.primaryGreen,
-              onChanged: widget.onLoopChanged,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text('Loop this segment', style: AppTextStyles.bodyLarge),
+              ),
+              Switch(
+                value: widget.loopEnabled,
+                activeThumbColor: AppColors.primaryGreen,
+                onChanged: widget.onLoopChanged,
+              ),
+            ],
           ),
         ],
       ),
