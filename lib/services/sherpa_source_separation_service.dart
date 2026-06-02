@@ -15,8 +15,8 @@ import 'wav_stream_io.dart';
 /// Fast on-device UVR MDX-NET 9482 via sherpa-onnx native C++ (Android primary).
 ///
 /// Same model file as iOS [UvrSeparationService]. On Snapdragon devices uses
-/// NNAPI so ONNX Runtime can offload to Qualcomm Hexagon NPU / DSP (Moises-style
-/// native acceleration — no per-chunk Dart STFT loop).
+/// QNN (Qualcomm AI Engine Direct) so ONNX Runtime can offload to Hexagon HTP/NPU
+/// directly — replaces legacy NNAPI for Moises-style native acceleration.
 class SherpaSourceSeparationService {
   SherpaSourceSeparationService._();
 

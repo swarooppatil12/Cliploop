@@ -12,7 +12,7 @@ import 'uvr_separation_service.dart';
 ///
 /// - **iOS:** [UvrSeparationService] — UVR MDX-NET 9482 via Core ML (Neural Engine).
 /// - **Android Snapdragon:** [SherpaSourceSeparationService] — same UVR model via
-///   sherpa-onnx native C++ with NNAPI (Hexagon NPU / DSP), Moises-style fast path.
+///   sherpa-onnx native C++ with QNN (Hexagon HTP / NPU), Moises-style fast path.
 /// - **Android fallback:** [UvrSeparationService] — identical streaming ONNX pipeline as iOS CPU.
 class MobileSeparationService {
   MobileSeparationService._();
@@ -35,6 +35,15 @@ class MobileSeparationService {
     }
 
     final profile = await AndroidDeviceService.instance.getProfile();
+    if (kDebugMode &&
+        profile.isSnapdragon &&
+        !profile.hasQnnLibs) {
+      debugPrint(
+        '[Separation] Snapdragon detected (${profile.socModel}) but QNN libs '
+        'not bundled — will try qnn then fall back to xnnpack/cpu. '
+        'Run scripts/copy_qnn_android_libs.sh to enable NPU.',
+      );
+    }
     await SherpaSourceSeparationService.instance.ensureReady(
       onModelDownloadProgress: onModelDownloadProgress,
       useSnapdragonAcceleration: profile.isSnapdragon,

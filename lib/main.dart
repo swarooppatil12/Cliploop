@@ -1,17 +1,25 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'providers/music_provider.dart';
 import 'providers/player_provider.dart';
 import 'providers/stem_pair_provider.dart';
+import 'services/android_path_provider_platform.dart';
 import 'services/notification_service.dart';
 import 'widgets/common/app_bootstrap.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (Platform.isAndroid) {
+    PathProviderPlatform.instance = AndroidPathProviderPlatform();
+  }
 
   // Avoid blocking first frame on network font downloads (device debug attach).
   GoogleFonts.config.allowRuntimeFetching = false;

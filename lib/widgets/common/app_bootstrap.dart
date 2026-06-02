@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/music_provider.dart';
+import '../../services/android_path_provider_platform.dart';
 import '../../services/share_intent_service.dart';
 
 /// Defers disk bootstrap until after the first rasterized frame (Android safe).
@@ -35,7 +37,9 @@ class _AppBootstrapState extends State<AppBootstrap> {
     await WidgetsBinding.instance.waitUntilFirstFrameRasterized;
 
     if (Platform.isAndroid) {
-      // Extra margin for Activity + JNI attach on Samsung / Android 16.
+      // Ensure path_provider uses our MethodChannel backend (Pigeon fails on some devices).
+      PathProviderPlatform.instance = AndroidPathProviderPlatform();
+      // Extra margin for Activity + plugin attach on Samsung / Android 16.
       await Future<void>.delayed(const Duration(milliseconds: 350));
     }
 

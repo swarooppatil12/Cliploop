@@ -6,7 +6,6 @@ import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/constants/app_constants.dart';
@@ -395,7 +394,7 @@ class LocalAudioEngine {
       drumsStem: bgm,
     );
 
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await AndroidPathsService.instance.temporaryDirectory();
     final jobId = _uuid.v4();
     final vocalStemPath = FileHelper.joinPath(tempDir.path, 'm3_vocal_$jobId.wav');
     final bgmStemPath = FileHelper.joinPath(tempDir.path, 'm3_bgm_$jobId.wav');
@@ -487,7 +486,7 @@ class LocalAudioEngine {
       crossfadeMs: crossfadeMs,
     );
 
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await AndroidPathsService.instance.temporaryDirectory();
     final outputPath = FileHelper.joinPath(
       tempDir.path,
       'gapless_${_uuid.v4()}.wav',
@@ -539,7 +538,7 @@ class LocalAudioEngine {
       return (path: inputPath, isTemporary: false);
     }
 
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await AndroidPathsService.instance.temporaryDirectory();
     final wavPath = FileHelper.joinPath(
       tempDir.path,
       'cliploops_${_uuid.v4()}.wav',
@@ -599,7 +598,7 @@ class LocalAudioEngine {
       return _readWav(File(inputPath), includeMono: includeMono);
     }
 
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await AndroidPathsService.instance.temporaryDirectory();
     final wavPath = FileHelper.joinPath(
       tempDir.path,
       'cliploops_${_uuid.v4()}.wav',

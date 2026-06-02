@@ -13,6 +13,22 @@ class AndroidPathsService {
 
   String? _documentsPath;
   String? _supportPath;
+  String? _cachePath;
+
+  Future<String> cachePath() async {
+    if (!Platform.isAndroid) {
+      return (await getTemporaryDirectory()).path;
+    }
+    if (_cachePath != null) {
+      return _cachePath!;
+    }
+    final path = await _channel.invokeMethod<String>('getAppCachePath');
+    if (path == null || path.isEmpty) {
+      throw StateError('Empty cache path from Android');
+    }
+    _cachePath = path;
+    return path;
+  }
 
   Future<String> documentsPath() async {
     if (!Platform.isAndroid) {
@@ -50,5 +66,13 @@ class AndroidPathsService {
 
   Future<Directory> supportDirectory() async {
     return Directory(await supportPath());
+  }
+
+  Future<Directory> cacheDirectory() async {
+    return Directory(await cachePath());
+  }
+
+  Future<Directory> temporaryDirectory() async {
+    return cacheDirectory();
   }
 }

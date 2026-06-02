@@ -218,15 +218,16 @@ class ProcessingConstants {
   /// Native sherpa-onnx UVR thread count (when native path is used).
   static const int uvrNativeNumThreads = 4;
 
-  /// Snapdragon — more threads + NNAPI (Hexagon NPU via Android NNAPI).
+  /// Snapdragon — more threads + QNN (Qualcomm AI Engine Direct / Hexagon HTP).
   static const int uvrSnapdragonNativeThreads = 8;
 
   /// Target max separation time on Snapdragon Android (full song).
   static const int androidSeparationTargetSeconds = 60;
 
-  /// Provider try-order on Snapdragon: NNAPI → XNNPACK → CPU.
+  /// Provider try-order on Snapdragon: QNN → XNNPACK → CPU.
+  /// QNN replaces legacy NNAPI for direct Hexagon NPU access (SM8350+).
   static const List<String> uvrSnapdragonProviderChain = [
-    'nnapi',
+    'qnn',
     'xnnpack',
     'cpu',
   ];

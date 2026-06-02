@@ -3,19 +3,27 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Android hardware profile — used to pick NNAPI / Hexagon (Snapdragon NPU) paths.
+/// Android hardware profile — used to pick QNN / Hexagon (Snapdragon NPU) paths.
 class AndroidDeviceProfile {
   const AndroidDeviceProfile({
     required this.isSnapdragon,
     required this.socModel,
     required this.hardware,
     required this.board,
+    this.qnnHtpArch = '',
+    this.hasQnnLibs = false,
   });
 
   final bool isSnapdragon;
   final String socModel;
   final String hardware;
   final String board;
+
+  /// SoC-specific Hexagon HTP arch, e.g. "V81" for SM8850 (S26 Ultra).
+  final String qnnHtpArch;
+
+  /// True when libQnnHtp.so + stub/skel are bundled in the APK.
+  final bool hasQnnLibs;
 
   static const AndroidDeviceProfile nonAndroid = AndroidDeviceProfile(
     isSnapdragon: false,
@@ -26,7 +34,8 @@ class AndroidDeviceProfile {
 
   @override
   String toString() =>
-      'AndroidDeviceProfile(snapdragon=$isSnapdragon soc=$socModel hw=$hardware)';
+      'AndroidDeviceProfile(snapdragon=$isSnapdragon soc=$socModel '
+      'qnnArch=$qnnHtpArch hasQnn=$hasQnnLibs)';
 }
 
 /// Reads SoC info from Android native layer.
@@ -61,6 +70,8 @@ class AndroidDeviceService {
         socModel: raw['socModel']?.toString() ?? '',
         hardware: raw['hardware']?.toString() ?? '',
         board: raw['board']?.toString() ?? '',
+        qnnHtpArch: raw['qnnHtpArch']?.toString() ?? '',
+        hasQnnLibs: raw['hasQnnLibs'] == true,
       );
 
       if (kDebugMode) {

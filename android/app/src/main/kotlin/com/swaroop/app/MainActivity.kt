@@ -1,6 +1,7 @@
 package com.swaroop.app
 
 import android.os.Build
+import android.os.Bundle
 import com.ryanheise.just_audio.SafeJustAudioPlugin
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -8,6 +9,11 @@ import io.flutter.plugin.common.MethodChannel
 import java.util.Locale
 
 class MainActivity : FlutterActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        QnnRuntimeHelper.configure(applicationContext)
+        super.onCreate(savedInstanceState)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -23,6 +29,7 @@ class MainActivity : FlutterActivity() {
                     val support = applicationContext.filesDir
                     result.success(support.absolutePath)
                 }
+                "getAppCachePath" -> result.success(cacheDir.absolutePath)
                 else -> result.notImplemented()
             }
         }
@@ -36,6 +43,8 @@ class MainActivity : FlutterActivity() {
                             "socModel" to (Build.SOC_MODEL ?: ""),
                             "hardware" to Build.HARDWARE,
                             "board" to Build.BOARD,
+                            "qnnHtpArch" to (QnnRuntimeHelper.htpArchSuffix() ?: ""),
+                            "hasQnnLibs" to QnnRuntimeHelper.qnnLibsPresent(applicationContext),
                         ),
                     )
                 }
@@ -44,7 +53,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /** Detect Qualcomm Snapdragon SoCs for NNAPI / Hexagon acceleration. */
+    /** Detect Qualcomm Snapdragon SoCs for QNN / Hexagon HTP acceleration. */
     private fun isSnapdragon(): Boolean {
         val soc = (Build.SOC_MODEL ?: "").lowercase(Locale.US)
         val hardware = Build.HARDWARE.lowercase(Locale.US)

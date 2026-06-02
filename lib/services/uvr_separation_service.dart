@@ -519,8 +519,8 @@ class UvrSeparationService {
 
     if (Platform.isAndroid) {
       if (_preferSnapdragonAcceleration &&
-          available.contains(OrtProvider.NNAPI)) {
-        return [OrtProvider.NNAPI, OrtProvider.XNNPACK, OrtProvider.CPU];
+          available.contains(OrtProvider.QNN)) {
+        return [OrtProvider.QNN, OrtProvider.XNNPACK, OrtProvider.CPU];
       }
       if (available.contains(OrtProvider.XNNPACK)) {
         return [OrtProvider.XNNPACK, OrtProvider.CPU];
