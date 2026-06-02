@@ -12,10 +12,11 @@ import 'uvr_separation_service.dart';
 
 /// Decode → UVR MDX-Net separation → vocals + instrumental stems on disk.
 ///
-/// The entire pipeline (ffmpeg decode, STFT/ISTFT, NPU inference) runs in a
-/// background isolate so the host app's UI never janks. Platform channels are
-/// made available in the isolate via [BackgroundIsolateBinaryMessenger] (the QNN
-/// delegate, path_provider, ffmpeg, and the ORT fallback all use channels).
+/// ffmpeg decode runs on the **main isolate** (ffmpeg_kit is not background-isolate
+/// safe). The heavy work — STFT/ISTFT + NPU inference + WAV writes — runs in a
+/// **spawned isolate** so it never janks the host UI. Channels used there (QNN
+/// delegate, path_provider, ORT fallback) are enabled via
+/// [BackgroundIsolateBinaryMessenger]. Progress streams back over a [SendPort].
 class SeparationEngine {
   SeparationEngine._();
   static final SeparationEngine instance = SeparationEngine._();
@@ -27,80 +28,28 @@ class SeparationEngine {
     if (!await File(audioPath).exists()) {
       throw ArgumentError('cliploop_highlights: file not found — $audioPath');
     }
-
-    final token = RootIsolateToken.instance;
-    if (token == null) {
-      // No root isolate (e.g. pure-Dart unit test) — run inline.
-      return _runPipeline(audioPath, onProgress);
-    }
-
-    final rp = ReceivePort();
-    final completer = Completer<SeparationStems>();
-    void fail(Object e) {
-      if (!completer.isCompleted) completer.completeError(e);
-      rp.close();
-    }
-
-    rp.listen((dynamic msg) {
-      if (msg is double) {
-        onProgress?.call(msg);
-      } else if (msg is SeparationStems) {
-        if (!completer.isCompleted) completer.complete(msg);
-        rp.close();
-      } else if (msg is List) {
-        // Isolate.spawn onError → [error, stack]; our catch → ['__err__', msg].
-        fail(Exception(msg.isNotEmpty ? msg.last.toString() : 'separation failed'));
-      } else if (msg == null) {
-        // onExit with no prior result.
-        fail(Exception('cliploop_highlights: separation isolate exited unexpectedly'));
-      }
-    });
-
-    final isolate = await Isolate.spawn(
-      _entry,
-      _SeparateRequest(token: token, audioPath: audioPath, send: rp.sendPort),
-      onError: rp.sendPort,
-      onExit: rp.sendPort,
-      errorsAreFatal: true,
-      debugName: 'cliploop_separation',
-    );
-    return completer.future.whenComplete(isolate.kill);
-  }
-
-  static Future<void> _entry(_SeparateRequest req) async {
-    BackgroundIsolateBinaryMessenger.ensureInitialized(req.token);
-    final stems = await _runPipeline(
-      req.audioPath,
-      (p) => req.send.send(p),
-    );
-    req.send.send(stems);
-  }
-
-  static Future<SeparationStems> _runPipeline(
-    String audioPath,
-    void Function(double progress)? onProgress,
-  ) async {
     final sw = Stopwatch()..start();
+
+    // 1) Decode on the MAIN isolate (ffmpeg_kit isn't background-isolate safe).
     final decoded = await decodeToWav16(audioPath);
     try {
+      // 2) Resolve output paths on main (filesystem is shared across isolates).
       final tempDir = await getTemporaryDirectory();
       final dir = Directory('${tempDir.path}/cliploop_stems_${const Uuid().v4()}');
       await dir.create(recursive: true);
+      final vocalsPath = '${dir.path}/vocals.wav';
+      final instPath = '${dir.path}/instrumental.wav';
 
-      final result = await UvrSeparationService.instance.separateWavToFiles(
-        wavPath: decoded.path,
-        vocalsOutPath: '${dir.path}/vocals.wav',
-        accompanimentOutPath: '${dir.path}/instrumental.wav',
-        onProgress: (p) => onProgress?.call(p.clamp(0, 100) / 100.0),
-      );
+      // 3) Heavy separation in a background isolate (inline if no root isolate).
+      final r = await _separate(decoded.path, vocalsPath, instPath, onProgress);
       sw.stop();
 
       return SeparationStems(
-        vocalsPath: result.vocalsPath,
-        instrumentalPath: result.accompanimentPath,
-        sampleRate: result.sampleRate,
-        durationSeconds: result.frameCount / result.sampleRate,
-        backend: _backend(),
+        vocalsPath: r.vocals,
+        instrumentalPath: r.inst,
+        sampleRate: r.sampleRate,
+        durationSeconds: r.frameCount / r.sampleRate,
+        backend: _backend(r.usedQnn),
         wallMs: sw.elapsedMilliseconds,
       );
     } finally {
@@ -112,24 +61,117 @@ class SeparationEngine {
     }
   }
 
-  static SeparationBackend _backend() {
+  Future<_SepResult> _separate(
+    String inWav,
+    String vocalsOut,
+    String instOut,
+    void Function(double progress)? onProgress,
+  ) async {
+    final token = RootIsolateToken.instance;
+    if (token == null) {
+      return _runSeparation(inWav, vocalsOut, instOut, onProgress);
+    }
+
+    final rp = ReceivePort();
+    final completer = Completer<_SepResult>();
+    void fail(Object e) {
+      if (!completer.isCompleted) completer.completeError(e);
+      rp.close();
+    }
+
+    rp.listen((dynamic msg) {
+      if (msg is double) {
+        onProgress?.call(msg);
+      } else if (msg is _SepResult) {
+        if (!completer.isCompleted) completer.complete(msg);
+        rp.close();
+      } else if (msg is List) {
+        fail(Exception(msg.isNotEmpty ? msg.last.toString() : 'separation failed'));
+      } else if (msg == null) {
+        fail(Exception('cliploop_highlights: separation isolate exited unexpectedly'));
+      }
+    });
+
+    final isolate = await Isolate.spawn(
+      _entry,
+      _SepRequest(token, inWav, vocalsOut, instOut, rp.sendPort),
+      onError: rp.sendPort,
+      onExit: rp.sendPort,
+      errorsAreFatal: true,
+      debugName: 'cliploop_separation',
+    );
+    return completer.future.whenComplete(isolate.kill);
+  }
+
+  static Future<void> _entry(_SepRequest req) async {
+    BackgroundIsolateBinaryMessenger.ensureInitialized(req.token);
+    final r = await _runSeparation(
+      req.inWav,
+      req.vocalsOut,
+      req.instOut,
+      (p) => req.send.send(p),
+    );
+    req.send.send(r);
+  }
+
+  /// The heavy work: STFT + NPU/ORT inference + ISTFT + WAV writes. The input is
+  /// an already-decoded 16-bit WAV (decode happened on the main isolate).
+  static Future<_SepResult> _runSeparation(
+    String inWav,
+    String vocalsOut,
+    String instOut,
+    void Function(double progress)? onProgress,
+  ) async {
+    final result = await UvrSeparationService.instance.separateWavToFiles(
+      wavPath: inWav,
+      vocalsOutPath: vocalsOut,
+      accompanimentOutPath: instOut,
+      onProgress: (p) => onProgress?.call(p.clamp(0, 100) / 100.0),
+    );
+    return _SepResult(
+      vocals: result.vocalsPath,
+      inst: result.accompanimentPath,
+      sampleRate: result.sampleRate,
+      frameCount: result.frameCount,
+      usedQnn: UvrSeparationService.instance.usingQnn,
+    );
+  }
+
+  SeparationBackend _backend(bool usedQnn) {
     if (Platform.isAndroid) {
-      return UvrSeparationService.instance.usingQnn
-          ? SeparationBackend.hexagonNpu
-          : SeparationBackend.cpu;
+      return usedQnn ? SeparationBackend.hexagonNpu : SeparationBackend.cpu;
     }
     if (Platform.isIOS) return SeparationBackend.coreml;
     return SeparationBackend.cpu;
   }
 }
 
-class _SeparateRequest {
-  const _SeparateRequest({
-    required this.token,
-    required this.audioPath,
-    required this.send,
-  });
+class _SepRequest {
+  const _SepRequest(
+    this.token,
+    this.inWav,
+    this.vocalsOut,
+    this.instOut,
+    this.send,
+  );
   final RootIsolateToken token;
-  final String audioPath;
+  final String inWav;
+  final String vocalsOut;
+  final String instOut;
   final SendPort send;
+}
+
+class _SepResult {
+  const _SepResult({
+    required this.vocals,
+    required this.inst,
+    required this.sampleRate,
+    required this.frameCount,
+    required this.usedQnn,
+  });
+  final String vocals;
+  final String inst;
+  final int sampleRate;
+  final int frameCount;
+  final bool usedQnn;
 }

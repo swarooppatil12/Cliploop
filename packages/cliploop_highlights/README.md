@@ -57,10 +57,11 @@ for (final s in h.sections) {
 2. STFT → MDX-Net (Hexagon NPU / Core ML / CPU) → ISTFT → vocals + instrumental WAVs.
 3. (Layer 2) Energy + position logic on the clean vocals stem → prelude/interlude/postlude.
 
-**Runs off the main thread.** The whole pipeline executes in a background isolate
-(`BackgroundIsolateBinaryMessenger`), so `separate()`/`analyze()` never jank the host
-UI — `await` it like any async call and use `onProgress` for a progress bar. In a
-pure-Dart context with no root isolate (unit tests) it falls back to running inline.
+**Runs off the main thread.** The heavy work (STFT/ISTFT + NPU inference + WAV writes)
+runs in a spawned isolate via `BackgroundIsolateBinaryMessenger`, so `separate()` /
+`analyze()` don't jank the host UI — `await` like any async call, use `onProgress` for a
+progress bar. The ffmpeg decode runs on the main isolate (ffmpeg_kit isn't
+background-isolate safe). Falls back to fully inline when there's no root isolate.
 
 No neural VAD, no waveform extraction — both removed as unnecessary for highlight detection.
 
