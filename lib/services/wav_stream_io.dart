@@ -204,6 +204,12 @@ Future<({Float32List left, Float32List right})> readWavStereoWindow(
 
       final chunkData = ByteData.sublistView(chunk);
       final framesInChunk = chunk.length ~/ (channels * 2);
+      // Guard: a non-empty partial read smaller than one frame (e.g. the header's
+      // frameCount overshoots the actual data) would leave `frame` unchanged and
+      // spin forever. Stop at the last whole frame we can read.
+      if (framesInChunk == 0) {
+        break;
+      }
       for (var i = 0; i < framesInChunk; i++) {
         final index = i * channels * 2;
         final l = chunkData.getInt16(index, Endian.little) / 32768.0;
@@ -250,6 +256,12 @@ Future<({Float32List left, Float32List right})> loadStereoFromWav(
 
       final chunkData = ByteData.sublistView(chunk);
       final framesInChunk = chunk.length ~/ (channels * 2);
+      // Guard: a non-empty partial read smaller than one frame (e.g. the header's
+      // frameCount overshoots the actual data) would leave `frame` unchanged and
+      // spin forever. Stop at the last whole frame we can read.
+      if (framesInChunk == 0) {
+        break;
+      }
       for (var i = 0; i < framesInChunk; i++) {
         final index = i * channels * 2;
         left[frame + i] = chunkData.getInt16(index, Endian.little) / 32768.0;
@@ -327,6 +339,12 @@ Future<Float32List> loadMonoFromWav(String path) async {
 
       final chunkData = ByteData.sublistView(chunk);
       final framesInChunk = chunk.length ~/ (channels * 2);
+      // Guard: a non-empty partial read smaller than one frame (e.g. the header's
+      // frameCount overshoots the actual data) would leave `frame` unchanged and
+      // spin forever. Stop at the last whole frame we can read.
+      if (framesInChunk == 0) {
+        break;
+      }
       for (var i = 0; i < framesInChunk; i++) {
         final index = i * channels * 2;
         final l = chunkData.getInt16(index, Endian.little) / 32768.0;

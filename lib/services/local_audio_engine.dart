@@ -107,11 +107,15 @@ class LocalAudioEngine {
 
       onProgress?.call(80);
       final svadStopwatch = Stopwatch()..start();
-      var vadStem = await SileroVadService.instance.detectVocalRegions(
-        mono: vocalMono,
-        sourceSampleRate: sepResult.sampleRate,
-        onModelDownloadProgress: (p) => onProgress?.call(80 + (p * 6 ~/ 100)),
-      );
+      // With clean separated vocals, energy thresholding on the stem suffices for
+      // section position logic; skip the neural SVAD (and its model download).
+      var vadStem = ProcessingConstants.useSvadForStructure
+          ? await SileroVadService.instance.detectVocalRegions(
+              mono: vocalMono,
+              sourceSampleRate: sepResult.sampleRate,
+              onModelDownloadProgress: (p) => onProgress?.call(80 + (p * 6 ~/ 100)),
+            )
+          : <(double, double)>[];
       onProgress?.call(88);
 
       final drumsStem = await _drumsStemForStructure(
@@ -265,11 +269,15 @@ class LocalAudioEngine {
 
       onProgress?.call(80);
       final svadStopwatch = Stopwatch()..start();
-      var vadStem = await SileroVadService.instance.detectVocalRegions(
-        mono: vocalMono,
-        sourceSampleRate: sepResult.sampleRate,
-        onModelDownloadProgress: (p) => onProgress?.call(80 + (p * 6 ~/ 100)),
-      );
+      // With clean separated vocals, energy thresholding on the stem suffices for
+      // section position logic; skip the neural SVAD (and its model download).
+      var vadStem = ProcessingConstants.useSvadForStructure
+          ? await SileroVadService.instance.detectVocalRegions(
+              mono: vocalMono,
+              sourceSampleRate: sepResult.sampleRate,
+              onModelDownloadProgress: (p) => onProgress?.call(80 + (p * 6 ~/ 100)),
+            )
+          : <(double, double)>[];
       onProgress?.call(88);
 
       final drumsStem = await _drumsStemForStructure(
@@ -571,6 +579,14 @@ class LocalAudioEngine {
   }
 
   Future<List<double>> _generateWaveformFromPath(String audioPath) async {
+    // Stem waveform visualization is not needed for highlight detection, and the
+    // native extractor (audio_waveforms) can hang on the separated WAVs — which
+    // would block the whole result from reaching the UI. Skip it; the stems still
+    // play. (Flip generateStemWaveforms to re-enable the native extraction.)
+    if (!ProcessingConstants.generateStemWaveforms) {
+      return List<double>.filled(AppConstants.waveformSampleCount, 0);
+    }
+
     final source = File(audioPath);
     if (!await source.exists()) {
       return List<double>.filled(AppConstants.waveformSampleCount, 0);
@@ -578,10 +594,12 @@ class LocalAudioEngine {
 
     final controller = PlayerController();
     try {
-      final waveform = await controller.extractWaveformData(
-        path: audioPath,
-        noOfSamples: AppConstants.waveformSampleCount,
-      );
+      final waveform = await controller
+          .extractWaveformData(
+            path: audioPath,
+            noOfSamples: AppConstants.waveformSampleCount,
+          )
+          .timeout(const Duration(seconds: 8), onTimeout: () => <double>[]);
       if (waveform.isEmpty) {
         return List<double>.filled(AppConstants.waveformSampleCount, 0);
       }

@@ -4,3 +4,4 @@
 .jobids
 .agejobs
 __pycache__/
+*.tflite
