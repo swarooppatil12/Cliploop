@@ -1,0 +1,49 @@
+group = "com.cliploop.highlights"
+version = "0.1.0"
+
+buildscript {
+    ext.kotlin_version = "2.1.0"
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:8.7.3"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+android {
+    namespace = "com.cliploop.highlights"
+    compileSdk = 36
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    defaultConfig {
+        minSdk = 24
+    }
+}
+
+dependencies {
+    // TFLite runtime + Qualcomm QNN delegate (Hexagon NPU). qnn-runtime bundles the
+    // matched Hexagon backend libs (incl. v81); no manual QAIRT SDK needed.
+    implementation "org.tensorflow:tensorflow-lite:2.17.0"
+    implementation "com.qualcomm.qti:qnn-runtime:2.46.0"
+    implementation "com.qualcomm.qti:qnn-litert-delegate:2.46.0"
+}

@@ -46,7 +46,12 @@ android {
             pickFirsts += listOf(
                 "**/libonnxruntime.so",
                 "**/libonnxruntime4j_jni.so",
+                "**/libc++_shared.so",
             )
+            // QNN Hexagon skel libs (libQnnHtpV*Skel.so) are loaded onto the DSP
+            // from a filesystem path, so the native libs must be extracted at
+            // install rather than mmap'd from the APK. Harmless when QNN is unused.
+            useLegacyPackaging = true
         }
     }
 }
@@ -63,4 +68,13 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
+    // TFLite runtime + Qualcomm QNN delegate for Hexagon NPU acceleration.
+    // Classic org.tensorflow:tensorflow-lite (not com.google.ai.edge.litert) because
+    // it cleanly EXPORTS org.tensorflow.lite.{Interpreter,Delegate} (which QnnDelegate
+    // implements) and is pure Java (no Kotlin-metadata version conflict). qnn-runtime
+    // bundles the matched Hexagon backend libs (incl. v81 for sm8850) — no manual QAIRT.
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
+    implementation("com.qualcomm.qti:qnn-runtime:2.46.0")
+    implementation("com.qualcomm.qti:qnn-litert-delegate:2.46.0")
 }

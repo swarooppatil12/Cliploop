@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Merged into the consumer app. Lets the QNN HTP stub (libQnnHtpV*Stub.so)
+         dlopen Qualcomm's CDSP FastRPC vendor lib to reach the Hexagon NPU.
+         NOTE: the consumer app must also enable extracted native libs so the HTP
+         skel libs load from disk on the DSP — set in the app's build.gradle:
+           android { packaging { jniLibs { useLegacyPackaging = true } } } -->
+    <application>
+        <uses-native-library android:name="libcdsprpc.so" android:required="false" />
+    </application>
+</manifest>

@@ -3,6 +3,22 @@ allprojects {
         google()
         mavenCentral()
     }
+    // sherpa_onnx 1.13.2 bundles ONNX Runtime 1.24.3 (versioned symbols
+    // OrtGetApiBase@VERS_1.24.3). flutter_onnxruntime defaults to
+    // onnxruntime-android 1.22.0, whose libonnxruntime4j_jni.so imports
+    // OrtGetApiBase@VERS_1.22.0. Since both ship libonnxruntime.so and only one
+    // survives packaging (pickFirst), the version mismatch causes
+    // UnsatisfiedLinkError at load and aborts ALL plugin registration. Force the
+    // matching ORT so a single libonnxruntime.so satisfies both stacks.
+    configurations.all {
+        resolutionStrategy {
+            // Align ORT to sherpa's bundled libonnxruntime.so (VERS_1.24.3) to avoid
+            // the UnsatisfiedLinkError/OrtGetApiBase symbol-version conflict that
+            // otherwise aborts all plugin registration. (Stock ORT keeps XNNPACK;
+            // NPU acceleration is handled separately via the LiteRT QNN delegate.)
+            force("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
+        }
+    }
 }
 
 val newBuildDir: Directory =

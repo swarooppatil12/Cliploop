@@ -54,6 +54,15 @@ dependencies:
   archive: ^4.0.9
   wakelock_plus: ^1.2.8
   audio_session: ^0.1.25
+
+# path_provider_android >=2.3.0 switched to package:jni, whose JNI bridge is not
+# attached during the Flutter warm-up frame on Android — the first directory
+# access hard-crashes the process (SIGSEGV in libdartjni.so / FindClass).
+# Pin to the 2.2.x line, which uses platform method channels (no JNI) and is
+# safe to call at startup.
+dependency_overrides:
+  path_provider_android: '>=2.2.0 <2.3.0'
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

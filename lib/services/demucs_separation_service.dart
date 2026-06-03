@@ -271,11 +271,20 @@ class DemucsSeparationService {
       return _cachedProviders!;
     }
 
-    final available = await _runtime.getAvailableProviders();
+    // ORT >=1.24 reports providers (e.g. WEBGPU) that flutter_onnxruntime's enum
+    // can't parse, making getAvailableProviders() throw. Tolerate that.
+    List<OrtProvider> available;
+    try {
+      available = await _runtime.getAvailableProviders();
+    } catch (error) {
+      if (kDebugMode) debugPrint('Demucs getAvailableProviders failed: $error');
+      available = const <OrtProvider>[];
+    }
+    final unknown = available.isEmpty;
     if (Platform.isIOS) {
       // CPU-only on iOS — CoreML/XNNPACK can exceed the ~3.4 GB process limit.
       _cachedProviders = [OrtProvider.CPU];
-    } else if (Platform.isAndroid && available.contains(OrtProvider.XNNPACK)) {
+    } else if (Platform.isAndroid && (unknown || available.contains(OrtProvider.XNNPACK))) {
       _cachedProviders = [OrtProvider.XNNPACK, OrtProvider.CPU];
     } else {
       _cachedProviders = [OrtProvider.CPU];
