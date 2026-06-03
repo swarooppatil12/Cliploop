@@ -109,7 +109,7 @@ class ProcessingConstants {
   static const int vocalOffsetMinFrames = 5;
 
   /// Frame counts as vocal only when vocal RMS / instrumental RMS exceeds this.
-  static const double vocalToInstrumentalMinRatio = 0.28;
+  static const double vocalToInstrumentalMinRatio = 0.38;
 
   /// Energy-only region must exceed this mean vocal RMS to supplement SVAD.
   static const double vocalConfirmationMinEnergy = 0.003;
@@ -124,6 +124,30 @@ class ProcessingConstants {
   /// Shortest sustained vocal frame group to count as a vocal region.
   static const double minVocalRegionSeconds = 0.25;
 
+  /// SVAD blips shorter than this are dropped unless vocal energy is very clear.
+  static const double minConfirmedVocalRegionSeconds = 1.0;
+
+  /// Unconditionally drop detected vocal regions shorter than this (UVR bleed).
+  static const double maxBleedVocalRegionSeconds = 0.65;
+
+  /// Fraction of vocal-active frames required to keep a short (0.25–0.85s) blip.
+  static const double shortVocalBlipMinFrameFraction = 0.48;
+
+  /// First span must be at least this long to end prelude (ignores UVR bleed before singing).
+  static const double preludeEndMinVocalSpanSeconds = 4.0;
+
+  /// Max prelude length when no clear opening instrumental span exists (seconds).
+  static const double preludeMaxSeconds = 55.0;
+
+  /// Opening non-vocal span must be at least this long to define prelude (seconds).
+  static const double preludeOpeningMinSeconds = 8.0;
+
+  /// Primary Silero threshold — singing, not stem bleed in instrumentals.
+  static const double sileroVadPrimaryThreshold = 0.30;
+
+  /// Secondary Silero pass when primary coverage is low (soft vocals).
+  static const double sileroVadSecondaryThreshold = 0.20;
+
   /// Merge vocal frames separated by gaps shorter than this (seconds).
   static const double vocalRegionMergeGapSeconds = 0.55;
 
@@ -134,7 +158,15 @@ class ProcessingConstants {
   static const double structureVocalSecondMergeGapSeconds = 8.0;
 
   /// Ignore blips shorter than this when building structure blocks.
-  static const double structureMicroVocalMaxSeconds = 3.0;
+  static const double structureMicroVocalMaxSeconds = 4.0;
+
+  /// Intro adlibs before this time must be at least this long to form a sung block.
+  static const double introAdlibMaxStartSeconds = 28.0;
+
+  static const double introAdlibMinBlockSeconds = 8.0;
+
+  /// Use full block gap as interlude when best carved span is below this fraction.
+  static const double interludeMinCarvedSpanFraction = 0.65;
 
   /// Gaps between structure blocks must be at least this long to be an interlude.
   static const double minStructureInterludeSeconds = 6.0;
@@ -164,13 +196,13 @@ class ProcessingConstants {
   static const double instrumentalMaxVocalFrameFraction = 0.12;
 
   /// Relaxed frame fraction for structural gaps between sung blocks (UVR bleed).
-  static const double structuralGapMaxVocalFrameFraction = 0.35;
+  static const double structuralGapMaxVocalFrameFraction = 0.22;
 
   /// Mean vocal RMS must stay below this for instrumental-only validation.
   static const double instrumentalMaxVocalEnergy = 0.0018;
 
   /// Relaxed mean vocal RMS for structural gaps with active music.
-  static const double structuralGapMaxVocalEnergy = 0.006;
+  static const double structuralGapMaxVocalEnergy = 0.0045;
 
   /// Instrumental stem must exceed this mean RMS for music-driven sections.
   static const double instrumentalMinMusicEnergy = 0.0008;
@@ -228,6 +260,26 @@ class ProcessingConstants {
 
   /// Native sherpa-onnx UVR thread count (when native path is used).
   static const int uvrNativeNumThreads = 4;
+
+  /// Snapdragon — more threads + QNN (Qualcomm AI Engine Direct / Hexagon HTP).
+  static const int uvrSnapdragonNativeThreads = 8;
+
+  /// Target max separation time on Snapdragon Android (full song).
+  static const int androidSeparationTargetSeconds = 60;
+
+  /// Provider try-order on Snapdragon: QNN → XNNPACK → CPU.
+  /// QNN replaces legacy NNAPI for direct Hexagon NPU access (SM8350+).
+  static const List<String> uvrSnapdragonProviderChain = [
+    'qnn',
+    'xnnpack',
+    'cpu',
+  ];
+
+  /// Provider try-order on other Android devices.
+  static const List<String> uvrAndroidProviderChain = [
+    'xnnpack',
+    'cpu',
+  ];
 
   /// Prefer Core ML for UVR on iOS (Neural Engine — much faster than CPU).
   static const bool uvrDartPreferCpuOnIos = false;

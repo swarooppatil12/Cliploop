@@ -1,0 +1,2 @@
+# Qualcomm QNN runtime — install via scripts/copy_qnn_android_libs.sh (not redistributable).
+libQnn*.so

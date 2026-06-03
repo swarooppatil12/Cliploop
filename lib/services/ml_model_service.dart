@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:archive/archive.dart';
-import 'package:path_provider/path_provider.dart';
+
+import 'android_paths_service.dart';
 
 /// Downloads and caches open-source ONNX models used on-device.
 class MlModelService {
@@ -77,7 +78,7 @@ class MlModelService {
     void Function(int progress)? onProgress,
   }) async {
     try {
-      final dir = await getApplicationSupportDirectory();
+      final dir = await AndroidPathsService.instance.supportDirectory();
       final modelsDir = Directory('${dir.path}/ml_models/spleeter');
       if (!await modelsDir.exists()) {
         await modelsDir.create(recursive: true);
@@ -174,7 +175,7 @@ class MlModelService {
     required int minBytes,
     void Function(int progress)? onProgress,
   }) async {
-    final dir = await getApplicationSupportDirectory();
+    final dir = await AndroidPathsService.instance.supportDirectory();
     final modelsDir = Directory('${dir.path}/ml_models');
     if (!await modelsDir.exists()) {
       await modelsDir.create(recursive: true);

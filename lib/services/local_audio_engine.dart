@@ -6,7 +6,6 @@ import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/constants/app_constants.dart';
@@ -19,8 +18,9 @@ import '../models/separation_result.dart';
 import '../models/track_stem.dart';
 import '../models/vocal_model_output.dart';
 import '../models/whisper_result.dart';
+import 'android_paths_service.dart';
 import 'gapless_mix_service.dart';
-import 'uvr_separation_service.dart';
+import 'mobile_separation_service.dart';
 import 'silero_vad_service.dart';
 import 'vocal_separation_engine.dart';
 import 'vocal_silence_service.dart';
@@ -128,31 +128,14 @@ class LocalAudioEngine {
         sepResult.sampleRate,
         drumsStem: drumsStem,
       );
-      final vadCoverage = SileroVadService.coverageFraction(
-        vadStem,
-        durationSeconds,
+      final vocalRegionsOverride = _resolveVocalRegionsForStructure(
+        vadStem: vadStem,
+        energyRegions: energyRegions,
+        durationSeconds: durationSeconds,
+        vocalMono: vocalMono,
+        drumsStem: drumsStem,
+        sampleRate: sepResult.sampleRate,
       );
-      final energyCoverage = SileroVadService.coverageFraction(
-        energyRegions,
-        durationSeconds,
-      );
-
-      final List<(double, double)> vocalRegionsOverride;
-      if (vadCoverage < ProcessingConstants.minVadCoverageFraction) {
-        vocalRegionsOverride = energyRegions;
-      } else if (energyCoverage >
-              vadCoverage * ProcessingConstants.vadEnergyMergeMaxRatio &&
-          energyRegions.isNotEmpty) {
-        vocalRegionsOverride = _mergeVocalDetections(
-          vadRegions: vadStem,
-          energyRegions: energyRegions,
-          vocalStem: vocalMono,
-          drumsStem: drumsStem,
-          sampleRate: sepResult.sampleRate,
-        );
-      } else {
-        vocalRegionsOverride = vadStem;
-      }
 
       stemTimestamps.addAll(
         _detectActiveRegions(drumsStem, sepResult.sampleRate, 'accompaniment'),
@@ -290,31 +273,14 @@ class LocalAudioEngine {
         sepResult.sampleRate,
         drumsStem: drumsStem,
       );
-      final vadCoverage = SileroVadService.coverageFraction(
-        vadStem,
-        durationSeconds,
+      final vocalRegionsOverride = _resolveVocalRegionsForStructure(
+        vadStem: vadStem,
+        energyRegions: energyRegions,
+        durationSeconds: durationSeconds,
+        vocalMono: vocalMono,
+        drumsStem: drumsStem,
+        sampleRate: sepResult.sampleRate,
       );
-      final energyCoverage = SileroVadService.coverageFraction(
-        energyRegions,
-        durationSeconds,
-      );
-
-      List<(double, double)> vocalRegionsOverride;
-      if (vadCoverage < ProcessingConstants.minVadCoverageFraction) {
-        vocalRegionsOverride = energyRegions;
-      } else if (energyCoverage >
-              vadCoverage * ProcessingConstants.vadEnergyMergeMaxRatio &&
-          energyRegions.isNotEmpty) {
-        vocalRegionsOverride = _mergeVocalDetections(
-          vadRegions: vadStem,
-          energyRegions: energyRegions,
-          vocalStem: vocalMono,
-          drumsStem: drumsStem,
-          sampleRate: sepResult.sampleRate,
-        );
-      } else {
-        vocalRegionsOverride = vadStem;
-      }
 
       final pipeline = _runStructurePipeline(
         vocalStem,
@@ -402,7 +368,7 @@ class LocalAudioEngine {
       drumsStem: bgm,
     );
 
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await AndroidPathsService.instance.temporaryDirectory();
     final jobId = _uuid.v4();
     final vocalStemPath = FileHelper.joinPath(tempDir.path, 'm3_vocal_$jobId.wav');
     final bgmStemPath = FileHelper.joinPath(tempDir.path, 'm3_bgm_$jobId.wav');
@@ -494,7 +460,7 @@ class LocalAudioEngine {
       crossfadeMs: crossfadeMs,
     );
 
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await AndroidPathsService.instance.temporaryDirectory();
     final outputPath = FileHelper.joinPath(
       tempDir.path,
       'gapless_${_uuid.v4()}.wav',
@@ -518,7 +484,7 @@ class LocalAudioEngine {
   Future<void> _ensureSeparationReady({
     void Function(int downloadProgress)? onModelDownloadProgress,
   }) async {
-    await UvrSeparationService.instance.ensureReady(
+    await MobileSeparationService.instance.ensureReady(
       onModelDownloadProgress: onModelDownloadProgress,
     );
   }
@@ -529,7 +495,7 @@ class LocalAudioEngine {
     required String accompanimentOutPath,
     void Function(int progress)? onProgress,
   }) {
-    return UvrSeparationService.instance.separateWavToFiles(
+    return MobileSeparationService.instance.separateWavToFiles(
       wavPath: wavPath,
       vocalsOutPath: vocalsOutPath,
       accompanimentOutPath: accompanimentOutPath,
@@ -546,7 +512,7 @@ class LocalAudioEngine {
       return (path: inputPath, isTemporary: false);
     }
 
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await AndroidPathsService.instance.temporaryDirectory();
     final wavPath = FileHelper.joinPath(
       tempDir.path,
       'cliploops_${_uuid.v4()}.wav',
@@ -617,7 +583,7 @@ class LocalAudioEngine {
       return _readWav(File(inputPath), includeMono: includeMono);
     }
 
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await AndroidPathsService.instance.temporaryDirectory();
     final wavPath = FileHelper.joinPath(
       tempDir.path,
       'cliploops_${_uuid.v4()}.wav',
@@ -950,6 +916,8 @@ class LocalAudioEngine {
     final structureBlocks = _buildStructureVocalBlocks(vocalRegions);
     final preludeEnd = _findPreludeEndSeconds(
       vocalRegions,
+      nonVocalParts: nonVocalParts,
+      duration: duration,
       vocalStem: vocalStem.mono,
       drumsStem: drumsStem,
       sampleRate: sampleRate,
@@ -1205,6 +1173,109 @@ class LocalAudioEngine {
       }
     }
     return stats.vocalFrameFraction >= 0.35;
+  }
+
+  /// Picks SVAD vs stem-energy regions, then drops UVR bleed blips and weak spans.
+  List<(double, double)> _resolveVocalRegionsForStructure({
+    required List<(double, double)> vadStem,
+    required List<(double, double)> energyRegions,
+    required double durationSeconds,
+    required Float32List vocalMono,
+    Float32List? drumsStem,
+    required int sampleRate,
+  }) {
+    final vadCoverage =
+        SileroVadService.coverageFraction(vadStem, durationSeconds);
+    final energyCoverage =
+        SileroVadService.coverageFraction(energyRegions, durationSeconds);
+
+    final List<(double, double)> merged;
+    if (vadCoverage < ProcessingConstants.minVadCoverageFraction) {
+      merged = energyRegions;
+    } else if (energyCoverage >
+            vadCoverage * ProcessingConstants.vadEnergyMergeMaxRatio &&
+        energyRegions.isNotEmpty) {
+      merged = _mergeVocalDetections(
+        vadRegions: vadStem,
+        energyRegions: energyRegions,
+        vocalStem: vocalMono,
+        drumsStem: drumsStem,
+        sampleRate: sampleRate,
+      );
+    } else {
+      merged = vadStem;
+    }
+
+    return _sanitizeVocalRegions(
+      merged,
+      vocalStem: vocalMono,
+      drumsStem: drumsStem,
+      sampleRate: sampleRate,
+    );
+  }
+
+  /// Removes short false vocal hits from separated stems (common in interludes).
+  List<(double, double)> _sanitizeVocalRegions(
+    List<(double, double)> regions, {
+    required Float32List vocalStem,
+    Float32List? drumsStem,
+    required int sampleRate,
+  }) {
+    if (regions.isEmpty) {
+      return [];
+    }
+
+    final sorted = List<(double, double)>.from(regions)
+      ..sort((a, b) => a.$1.compareTo(b.$1));
+    final kept = <(double, double)>[];
+
+    for (final region in sorted) {
+      final duration = region.$2 - region.$1;
+      if (duration <= ProcessingConstants.maxBleedVocalRegionSeconds) {
+        continue;
+      }
+      if (duration >= ProcessingConstants.minConfirmedVocalRegionSeconds) {
+        if (_confirmVocalRegion(
+          region,
+          vocalStem: vocalStem,
+          drumsStem: drumsStem,
+          sampleRate: sampleRate,
+        )) {
+          kept.add(region);
+        }
+        continue;
+      }
+
+      if (duration < ProcessingConstants.minVocalRegionSeconds) {
+        continue;
+      }
+
+      final stats = _analyzeSectionVocalActivity(
+        vocalStem,
+        sampleRate,
+        region.$1,
+        region.$2,
+        drumsStem: drumsStem,
+      );
+      if (stats.vocalFrameFraction <
+          ProcessingConstants.shortVocalBlipMinFrameFraction) {
+        continue;
+      }
+
+      if (_confirmVocalRegion(
+        region,
+        vocalStem: vocalStem,
+        drumsStem: drumsStem,
+        sampleRate: sampleRate,
+      )) {
+        kept.add(region);
+      }
+    }
+
+    return _mergeRegions(
+      kept,
+      gap: ProcessingConstants.vocalRegionMergeGapSeconds,
+    );
   }
 
   double _regionOverlapFraction(
@@ -1571,8 +1642,8 @@ class LocalAudioEngine {
       if (duration < ProcessingConstants.structureMicroVocalMaxSeconds) {
         return false;
       }
-      if (region.$1 < ProcessingConstants.structurePreludeMinStartSeconds &&
-          duration < 8) {
+      if (region.$1 < ProcessingConstants.introAdlibMaxStartSeconds &&
+          duration < ProcessingConstants.introAdlibMinBlockSeconds) {
         return false;
       }
       return true;
@@ -1664,13 +1735,56 @@ class LocalAudioEngine {
     return 0;
   }
 
-  /// Prelude ends at the first real vocals (instrumental-only before that). Returns 0 if none.
+  /// Prelude ends after the opening instrumental span (not at the first sung block).
   double _findPreludeEndSeconds(
     List<(double, double)> rawVocalRegions, {
+    required List<(double, double)> nonVocalParts,
+    required double duration,
     required Float32List vocalStem,
     Float32List? drumsStem,
     required int sampleRate,
   }) {
+    const openingStartTolerance = 0.35;
+    final sortedParts = List<(double, double)>.from(nonVocalParts)
+      ..sort((a, b) => a.$1.compareTo(b.$1));
+
+    for (final (partStart, partEnd) in sortedParts) {
+      if (partStart > openingStartTolerance) {
+        break;
+      }
+      final openingLength = partEnd - partStart;
+      if (openingLength < ProcessingConstants.preludeOpeningMinSeconds) {
+        continue;
+      }
+      var openingEnd = partEnd;
+      if (duration > 0) {
+        openingEnd = openingEnd.clamp(
+          ProcessingConstants.preludeOpeningMinSeconds,
+          math.min(duration, ProcessingConstants.preludeMaxSeconds),
+        );
+      } else {
+        openingEnd = openingEnd.clamp(
+          ProcessingConstants.preludeOpeningMinSeconds,
+          ProcessingConstants.preludeMaxSeconds,
+        );
+      }
+      if (_isInstrumentalOnlyRegion(
+        start: 0,
+        end: openingEnd,
+        vocalStem: vocalStem,
+        drumsStem: drumsStem,
+        sampleRate: sampleRate,
+        minDuration: ProcessingConstants.minStructureGapSeconds,
+        edgeSection: true,
+        structuralGap: true,
+      )) {
+        return openingEnd;
+      }
+      if (openingLength >= ProcessingConstants.structurePreludeMinStartSeconds) {
+        return openingEnd;
+      }
+    }
+
     final stemOnset = _findFirstSustainedVocalOnset(
       vocalStem,
       sampleRate,
@@ -1682,6 +1796,10 @@ class LocalAudioEngine {
 
     double? confirmedStart;
     for (final region in sortedRaw) {
+      final span = region.$2 - region.$1;
+      if (span < ProcessingConstants.preludeEndMinVocalSpanSeconds) {
+        continue;
+      }
       if (_confirmVocalRegion(
         region,
         vocalStem: vocalStem,
@@ -1701,11 +1819,21 @@ class LocalAudioEngine {
     } else if (confirmedStart != null) {
       candidate = confirmedStart;
     } else if (sortedRaw.isNotEmpty) {
-      candidate = sortedRaw.first.$1;
+      final first = sortedRaw.first;
+      if (first.$2 - first.$1 >=
+          ProcessingConstants.preludeEndMinVocalSpanSeconds) {
+        candidate = first.$1;
+      }
     }
 
     if (candidate <= 0) {
       return 0;
+    }
+
+    if (duration > 0) {
+      candidate = candidate.clamp(0.0, ProcessingConstants.preludeMaxSeconds);
+    } else {
+      candidate = math.min(candidate, ProcessingConstants.preludeMaxSeconds);
     }
 
     if (_isInstrumentalOnlyRegion(
@@ -1720,7 +1848,9 @@ class LocalAudioEngine {
       return candidate;
     }
 
-    return stemOnset > 0 ? stemOnset : 0;
+    return stemOnset > 0
+        ? math.min(stemOnset, ProcessingConstants.preludeMaxSeconds)
+        : 0;
   }
 
   /// Outro begins after the last raw vocal line in the final sung block.
@@ -1853,8 +1983,31 @@ class LocalAudioEngine {
           bestDuration = duration;
         }
       }
+      final gapDuration = gapEnd - gapStart;
       if (best != null) {
         tryAdd(best.$1, best.$2, fromSvadNonVocalPart: false);
+      }
+      final carvedFraction =
+          gapDuration > 0 ? bestDuration / gapDuration : 0.0;
+      final carvedMissesGapStart =
+          best != null && best.$1 > gapStart + 1.5;
+      if (best == null ||
+          carvedFraction <
+              ProcessingConstants.interludeMinCarvedSpanFraction ||
+          carvedMissesGapStart) {
+        final fullStart = _refineInterludeStart(gapStart, sortedRaw);
+        final fullEnd = _refineInterludeEnd(gapEnd, sortedRaw);
+        if (fullEnd - fullStart >= minInterlude &&
+            _passesInterludeInstrumentalCheck(
+              start: fullStart,
+              end: fullEnd,
+              vocalStem: vocalStem,
+              drumsStem: drumsStem,
+              sampleRate: sampleRate,
+              allowRelaxed: true,
+            )) {
+          tryAdd(fullStart, fullEnd, fromSvadNonVocalPart: false);
+        }
       }
     }
 
@@ -1975,6 +2128,8 @@ class LocalAudioEngine {
 
     final preludeEnd = _findPreludeEndSeconds(
       rawVocalRegions,
+      nonVocalParts: nonVocalParts,
+      duration: duration,
       vocalStem: vocalStem,
       drumsStem: drumsStem,
       sampleRate: sampleRate,
@@ -2383,28 +2538,37 @@ class LocalAudioEngine {
   }
 
   void _logVocalModelOutput(String rawLog) {
-    debugPrint(rawLog);
+    if (!kDebugMode || rawLog.isEmpty) {
+      return;
+    }
+
+    for (final line in rawLog.split('\n')) {
+      debugPrint('[CliploopsPipeline] $line');
+    }
   }
 
-  /// Bold timing summary for `flutter run` / Xcode console after ML + SVAD finish.
+  /// Timing summary for `flutter run` / Xcode console after ML + SVAD finish.
   void _logScanTimingComplete({
     required String methodLabel,
     required Duration total,
     required Duration mlSeparation,
     required Duration svadAndStructure,
   }) {
+    if (!kDebugMode) {
+      return;
+    }
+
     final totalLabel = _formatScanDuration(total);
     final mlLabel = _formatScanDuration(mlSeparation);
     final svadLabel = _formatScanDuration(svadAndStructure);
+    const tag = '[CliploopsTiming]';
 
     debugPrint('');
-    debugPrint(_terminalBold('══════════════════════════════════════════════════'));
-    debugPrint(
-      _terminalBold('$methodLabel scan completed in $totalLabel'),
-    );
-    debugPrint(_terminalBold('  ML separation:     $mlLabel'));
-    debugPrint(_terminalBold('  SVAD + structure:  $svadLabel'));
-    debugPrint(_terminalBold('══════════════════════════════════════════════════'));
+    debugPrint('$tag ══════════════════════════════════════════════════');
+    debugPrint('$tag $methodLabel scan completed in $totalLabel');
+    debugPrint('$tag   ML separation:     $mlLabel');
+    debugPrint('$tag   SVAD + structure:  $svadLabel');
+    debugPrint('$tag ══════════════════════════════════════════════════');
     debugPrint('');
   }
 
@@ -2421,8 +2585,6 @@ class LocalAudioEngine {
     }
     return '${duration.inMilliseconds}ms';
   }
-
-  String _terminalBold(String text) => '\x1B[1m$text\x1B[0m';
 
   String _formatTimestamp(double seconds) {
     final total = seconds.floor();
@@ -2593,7 +2755,7 @@ class LocalAudioEngine {
   }
 
   Future<Directory> _stemOutputDirectory(String jobId) async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await AndroidPathsService.instance.documentsDirectory();
     final stemDirectory = Directory(
       FileHelper.joinPath(
         directory.path,

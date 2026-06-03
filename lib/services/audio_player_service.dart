@@ -141,10 +141,6 @@ class AudioPlayerService {
   }
 
   Future<void> _playExclusive(String stemId) async {
-    if (kDebugMode) {
-      debugPrint('[AudioPlayer] playExclusive id=$stemId loaded=${_players.keys.toList()}');
-    }
-
     for (final entry in _players.entries) {
       if (entry.key == stemId) {
         continue;

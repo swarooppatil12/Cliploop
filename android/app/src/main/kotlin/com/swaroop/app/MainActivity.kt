@@ -1,5 +1,8 @@
 package com.swaroop.app
 
+import android.os.Build
+import android.os.Bundle
+import com.ryanheise.just_audio.SafeJustAudioPlugin
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -7,6 +10,7 @@ import org.tensorflow.lite.Interpreter
 import com.qualcomm.qti.QnnDelegate
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Locale
 import java.util.concurrent.Executors
 
 /**
@@ -16,7 +20,7 @@ import java.util.concurrent.Executors
  * thread-safe, so all delegate ops stay on one executor thread.
  */
 class MainActivity : FlutterActivity() {
-    private val channelName = "com.swaroop.app/qnn"
+    private val qnnChannelName = "com.swaroop.app/qnn"
     private val exec = Executors.newSingleThreadExecutor()
 
     private var interpreter: Interpreter? = null
@@ -25,32 +29,72 @@ class MainActivity : FlutterActivity() {
     private var outBuf: ByteBuffer? = null
     private var ioLen = 0
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        QnnRuntimeHelper.configure(applicationContext)
+        super.onCreate(savedInstanceState)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "init" -> exec.execute {
-                        val r = qnnInit()
-                        runOnUiThread { result.success(r) }
-                    }
-                    "run" -> {
-                        val input = call.arguments as? FloatArray
-                        exec.execute {
-                            val r = qnnRun(input)
-                            runOnUiThread {
-                                if (r != null) result.success(r)
-                                else result.error("QNN_RUN", "run failed (not initialized or bad input)", null)
-                            }
+
+        // Re-register just_audio with a null-safe plugin (see SafeJustAudioPlugin).
+        flutterEngine.plugins.add(SafeJustAudioPlugin())
+
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+
+        MethodChannel(messenger, qnnChannelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "init" -> exec.execute {
+                    val r = qnnInit()
+                    runOnUiThread { result.success(r) }
+                }
+                "run" -> {
+                    val input = call.arguments as? FloatArray
+                    exec.execute {
+                        val r = qnnRun(input)
+                        runOnUiThread {
+                            if (r != null) result.success(r)
+                            else result.error("QNN_RUN", "run failed (not initialized or bad input)", null)
                         }
                     }
-                    "close" -> exec.execute {
-                        qnnClose()
-                        runOnUiThread { result.success(true) }
-                    }
-                    else -> result.notImplemented()
                 }
+                "close" -> exec.execute {
+                    qnnClose()
+                    runOnUiThread { result.success(true) }
+                }
+                else -> result.notImplemented()
             }
+        }
+
+        MethodChannel(messenger, "com.swaroop.app/paths").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getAppDocumentsPath" -> result.success(filesDir.absolutePath)
+                "getAppSupportPath" -> {
+                    val support = applicationContext.filesDir
+                    result.success(support.absolutePath)
+                }
+                "getAppCachePath" -> result.success(cacheDir.absolutePath)
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(messenger, "com.swaroop.app/device").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getDeviceProfile" -> {
+                    result.success(
+                        mapOf(
+                            "isSnapdragon" to isSnapdragon(),
+                            "socModel" to (Build.SOC_MODEL ?: ""),
+                            "hardware" to Build.HARDWARE,
+                            "board" to Build.BOARD,
+                            "qnnHtpArch" to (QnnRuntimeHelper.htpArchSuffix() ?: ""),
+                            "hasQnnLibs" to QnnRuntimeHelper.qnnLibsPresent(applicationContext),
+                        ),
+                    )
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private fun qnnInit(): Map<String, Any> {
@@ -104,5 +148,25 @@ class MainActivity : FlutterActivity() {
         try { interpreter?.close() } catch (_: Throwable) {}
         try { delegate?.close() } catch (_: Throwable) {}
         interpreter = null; delegate = null; inBuf = null; outBuf = null
+    }
+
+    /** Detect Qualcomm Snapdragon SoCs for QNN / Hexagon HTP acceleration. */
+    private fun isSnapdragon(): Boolean {
+        val soc = (Build.SOC_MODEL ?: "").lowercase(Locale.US)
+        val hardware = Build.HARDWARE.lowercase(Locale.US)
+        val board = Build.BOARD.lowercase(Locale.US)
+
+        if (soc.contains("snapdragon")) return true
+        if (soc.matches(Regex("sm[0-9a-z]+"))) return true
+        if (hardware.contains("qcom") || hardware.startsWith("qcom")) return true
+
+        val qcomBoards = listOf(
+            "lahaina", "taro", "kalama", "pineapple", "sun", "parrot",
+            "crow", "canoe", "bonito", "blueline", "crosshatch", "coral",
+            "flame", "redfin", "barbet", "bramble", "sunfish", "kona", "m3q",
+        )
+        if (qcomBoards.any { board.contains(it) }) return true
+
+        return false
     }
 }

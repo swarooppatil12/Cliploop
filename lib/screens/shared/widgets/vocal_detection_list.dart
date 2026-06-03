@@ -309,8 +309,13 @@ class _TimestampRow extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(segment.timeRange, style: AppTextStyles.mono),
+                    child: Text(
+                      segment.timeRange,
+                      style: AppTextStyles.mono,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Text(
                     TimeFormatter.formatDuration(
                       segment.durationSeconds.round(),

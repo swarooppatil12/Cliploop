@@ -34,6 +34,7 @@ dependencies:
   audio_waveforms: ^1.0.5
   just_audio: ^0.9.36
   path_provider: ^2.1.2
+  path_provider_platform_interface: ^2.1.2
   share_plus: ^7.2.1
   permission_handler: ^11.3.0
   ffmpeg_kit_flutter_new_min: ^3.1.0
@@ -69,6 +70,11 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.3
 
+# path_provider_android 2.3+ uses Dart JNI (libdartjni.so) which SIGSEGVs on
+# Android 16 / Samsung at plugin registration before JNIEnv is ready.
+dependency_overrides:
+  path_provider_android: 2.2.23
+
 flutter_launcher_icons:
   android: true
   ios: true
@@ -82,6 +88,10 @@ flutter_launcher_icons:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # Use LLDB + devicectl on iOS 17+ (Xcode 26+) instead of Xcode GUI automation,
+  # which times out on CONFIGURATION_BUILD_DIR. Keep the phone on USB for reliability.
+  config:
+    enable-lldb-debugging: true
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

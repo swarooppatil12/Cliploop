@@ -74,6 +74,30 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> toggleStem(String stemId) async {
+    if (!_audioPlayerService.hasStem(stemId)) {
+      if (kDebugMode) {
+        debugPrint('[PlayerProvider] toggleStem skipped — $stemId not loaded');
+      }
+      return;
+    }
+
+    if (activeStemId == stemId && isPlaying) {
+      pause();
+      return;
+    }
+
+    if (activeStemId == stemId && !isPlaying) {
+      playbackSegment = null;
+      await _audioPlayerService.playExclusive(stemId);
+      isPlaying = true;
+      notifyListeners();
+      return;
+    }
+
+    await soloStem(stemId);
+  }
+
   Future<void> soloStem(String stemId) async {
     if (!_audioPlayerService.hasStem(stemId)) {
       if (kDebugMode) {
@@ -82,6 +106,7 @@ class PlayerProvider extends ChangeNotifier {
       return;
     }
 
+    playbackSegment = null;
     activeStemId = stemId;
 
     for (final id in _audioPlayerService.loadedStemIds) {

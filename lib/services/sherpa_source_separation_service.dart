@@ -1,6 +1,8 @@
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
+
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
@@ -10,10 +12,11 @@ import 'ml_model_service.dart';
 import 'sherpa_source_separation_bindings.dart';
 import 'wav_stream_io.dart';
 
-/// Fast on-device separation via sherpa-onnx native C++ (UVR or Spleeter).
+/// Fast on-device UVR MDX-NET 9482 via sherpa-onnx native C++ (Android primary).
 ///
-/// Avoids per-chunk Dart STFT + flutter_onnxruntime — typically 5–15× faster
-/// than [UvrSeparationService] on iOS for full songs.
+/// Same model file as iOS [UvrSeparationService]. On Snapdragon devices uses
+/// QNN (Qualcomm AI Engine Direct) so ONNX Runtime can offload to Hexagon HTP/NPU
+/// directly — replaces legacy NNAPI for Moises-style native acceleration.
 class SherpaSourceSeparationService {
   SherpaSourceSeparationService._();
 
@@ -21,13 +24,24 @@ class SherpaSourceSeparationService {
       SherpaSourceSeparationService._();
 
   Pointer<SherpaOnnxOfflineSourceSeparation>? _uvrPtr;
-  Pointer<SherpaOnnxOfflineSourceSeparation>? _spleeterPtr;
+  String? _activeProvider;
+  int? _activeThreads;
+
+  String get lastProvider => _activeProvider ?? 'cpu';
 
   Future<void> ensureReady({
     void Function(int downloadProgress)? onModelDownloadProgress,
+    bool useSnapdragonAcceleration = false,
   }) async {
     SherpaSourceSeparationBindings.instance.ensureInitialized();
-    await _ensureUvr(onDownloadProgress: onModelDownloadProgress);
+    final chain = useSnapdragonAcceleration
+        ? ProcessingConstants.uvrSnapdragonProviderChain
+        : ProcessingConstants.uvrAndroidProviderChain;
+    await _ensureUvr(
+      providerChain: chain,
+      useSnapdragonAcceleration: useSnapdragonAcceleration,
+      onDownloadProgress: onModelDownloadProgress,
+    );
   }
 
   Future<SeparationFileResult> separateWavToFiles({
@@ -36,6 +50,7 @@ class SherpaSourceSeparationService {
     required String accompanimentOutPath,
     void Function(int progress)? onProgress,
     void Function(int downloadProgress)? onModelDownloadProgress,
+    bool useSnapdragonAcceleration = false,
   }) async {
     SherpaSourceSeparationBindings.instance.ensureInitialized();
     onProgress?.call(24);
@@ -47,53 +62,61 @@ class SherpaSourceSeparationService {
       );
     }
     if (info.channels < 2) {
-      throw Exception('Expected stereo WAV for source separation.');
+      throw Exception('Expected stereo WAV for UVR separation.');
     }
 
     onProgress?.call(28);
 
-    // UVR first — best vocal isolation for SVAD / structure (matches prior pipeline).
-    try {
-      final uvr = await _ensureUvr(onDownloadProgress: onModelDownloadProgress);
-      if (kDebugMode) {
-        debugPrint('[Separation] native UVR (${info.frameCount} frames)');
-      }
-      return await _runNative(
-        ptr: uvr,
-        wavPath: wavPath,
-        info: info,
-        vocalsOutPath: vocalsOutPath,
-        accompanimentOutPath: accompanimentOutPath,
-        onProgress: onProgress,
-        progressStart: 32,
-        progressEnd: 76,
-      );
-    } catch (error, stack) {
-      if (kDebugMode) {
-        debugPrint('[Separation] UVR native failed: $error\n$stack');
+    final chain = useSnapdragonAcceleration
+        ? ProcessingConstants.uvrSnapdragonProviderChain
+        : ProcessingConstants.uvrAndroidProviderChain;
+
+    Object? lastError;
+    for (final provider in chain) {
+      try {
+        final threads = _threadsFor(provider, useSnapdragonAcceleration);
+        final uvr = await _ensureUvr(
+          provider: provider,
+          threads: threads,
+          onDownloadProgress: onModelDownloadProgress,
+        );
+
+        if (kDebugMode) {
+          debugPrint(
+            '[Separation] native UVR MDX-NET 9482 provider=$provider '
+            'threads=$threads frames=${info.frameCount}',
+          );
+        }
+
+        return await _runNative(
+          ptr: uvr,
+          wavPath: wavPath,
+          info: info,
+          vocalsOutPath: vocalsOutPath,
+          accompanimentOutPath: accompanimentOutPath,
+          onProgress: onProgress,
+          progressStart: 32,
+          progressEnd: 76,
+        );
+      } catch (error, stack) {
+        lastError = error;
+        _disposeUvr();
+        if (kDebugMode) {
+          debugPrint('[Separation] provider=$provider failed: $error\n$stack');
+        }
       }
     }
 
-    // Spleeter fallback — much faster when UVR cannot run (e.g. OOM).
-    final spleeter = await _tryEnsureSpleeter(
-      onDownloadProgress: onModelDownloadProgress,
+    throw StateError(
+      'Native UVR MDX-NET failed (providers: ${chain.join(" → ")}): $lastError',
     );
-    if (spleeter == null) {
-      throw StateError('Native source separation failed (UVR and Spleeter).');
+  }
+
+  int _threadsFor(String provider, bool snapdragon) {
+    if (snapdragon && provider != 'cpu') {
+      return ProcessingConstants.uvrSnapdragonNativeThreads;
     }
-    if (kDebugMode) {
-      debugPrint('[Separation] native Spleeter fallback (${info.frameCount} frames)');
-    }
-    return _runNative(
-      ptr: spleeter,
-      wavPath: wavPath,
-      info: info,
-      vocalsOutPath: vocalsOutPath,
-      accompanimentOutPath: accompanimentOutPath,
-      onProgress: onProgress,
-      progressStart: 32,
-      progressEnd: 76,
-    );
+    return ProcessingConstants.uvrNativeNumThreads;
   }
 
   Future<SeparationFileResult> _runNative({
@@ -188,7 +211,8 @@ class SherpaSourceSeparationService {
 
       if (kDebugMode) {
         debugPrint(
-          '[Separation] native done — vocal peak=$vocalPeak inst peak=$instPeak len=${vocalsMono.length}',
+          '[Separation] native done provider=$lastProvider '
+          'vocalPeak=$vocalPeak instPeak=$instPeak len=${vocalsMono.length}',
         );
       }
 
@@ -258,63 +282,64 @@ class SherpaSourceSeparationService {
   }
 
   Future<Pointer<SherpaOnnxOfflineSourceSeparation>> _ensureUvr({
+    String? provider,
+    int? threads,
+    List<String>? providerChain,
+    bool useSnapdragonAcceleration = false,
     void Function(int progress)? onDownloadProgress,
   }) async {
-    if (_uvrPtr != null && _uvrPtr != nullptr) {
+    final resolvedProvider = provider ??
+        (providerChain?.isNotEmpty == true ? providerChain!.first : 'cpu');
+    final resolvedThreads = threads ??
+        _threadsFor(resolvedProvider, useSnapdragonAcceleration);
+
+    if (_uvrPtr != null &&
+        _uvrPtr != nullptr &&
+        _activeProvider == resolvedProvider &&
+        _activeThreads == resolvedThreads) {
       return _uvrPtr!;
     }
+
+    _disposeUvr();
 
     final modelPath = await MlModelService.instance.ensureUvrMdxnet(
       onProgress: onDownloadProgress,
     );
+
     _uvrPtr = _createEngine(
       uvrModel: modelPath,
-      spleeterVocals: '',
-      spleeterAccompaniment: '',
+      provider: resolvedProvider,
+      threads: resolvedThreads,
     );
+    _activeProvider = resolvedProvider;
+    _activeThreads = resolvedThreads;
     return _uvrPtr!;
   }
 
-  Future<Pointer<SherpaOnnxOfflineSourceSeparation>?> _tryEnsureSpleeter({
-    void Function(int progress)? onDownloadProgress,
-  }) async {
-    if (_spleeterPtr != null && _spleeterPtr != nullptr) {
-      return _spleeterPtr;
+  void _disposeUvr() {
+    if (_uvrPtr == null || _uvrPtr == nullptr) {
+      return;
     }
-
-    try {
-      final paths = await MlModelService.instance.ensureSpleeterModels(
-        onProgress: onDownloadProgress,
-      );
-      _spleeterPtr = _createEngine(
-        uvrModel: '',
-        spleeterVocals: paths.vocals,
-        spleeterAccompaniment: paths.accompaniment,
-      );
-      return _spleeterPtr;
-    } catch (error) {
-      if (kDebugMode) {
-        debugPrint('[Separation] Spleeter models unavailable: $error');
-      }
-      return null;
-    }
+    SherpaSourceSeparationBindings.instance.destroy(_uvrPtr!);
+    _uvrPtr = null;
+    _activeProvider = null;
+    _activeThreads = null;
   }
 
   Pointer<SherpaOnnxOfflineSourceSeparation> _createEngine({
     required String uvrModel,
-    required String spleeterVocals,
-    required String spleeterAccompaniment,
+    required String provider,
+    required int threads,
   }) {
     final bindings = SherpaSourceSeparationBindings.instance;
     final config = calloc<SherpaOnnxOfflineSourceSeparationConfig>();
 
-    config.ref.model.spleeter.vocals = spleeterVocals.toNativeUtf8();
-    config.ref.model.spleeter.accompaniment =
-        spleeterAccompaniment.toNativeUtf8();
+    config.ref.model.spleeter.vocals = ''.toNativeUtf8();
+    config.ref.model.spleeter.accompaniment = ''.toNativeUtf8();
     config.ref.model.uvr.model = uvrModel.toNativeUtf8();
-    config.ref.model.numThreads = ProcessingConstants.uvrNativeNumThreads;
-    config.ref.model.debug = 0;
-    config.ref.model.provider = 'cpu'.toNativeUtf8();
+    config.ref.model.numThreads = threads;
+    config.ref.model.debug = kDebugMode ? 1 : 0;
+    config.ref.model.provider = provider.toNativeUtf8();
 
     final ptr = bindings.create(config);
 
@@ -325,13 +350,16 @@ class SherpaSourceSeparationService {
     calloc.free(config);
 
     if (ptr == nullptr) {
-      throw StateError('SherpaOnnxCreateOfflineSourceSeparation failed');
+      throw StateError(
+        'SherpaOnnxCreateOfflineSourceSeparation failed (provider=$provider)',
+      );
     }
 
     if (kDebugMode) {
       debugPrint(
-        '[Separation] engine ready stems=${bindings.getNumStems(ptr)} '
-        'sr=${bindings.getSampleRate(ptr)} threads=${ProcessingConstants.uvrNativeNumThreads}',
+        '[Separation] engine ready model=UVR_MDXNET_9482 provider=$provider '
+        'threads=$threads stems=${bindings.getNumStems(ptr)} '
+        'sr=${bindings.getSampleRate(ptr)}',
       );
     }
 

@@ -45,6 +45,7 @@ class UvrSeparationService {
   Float32List? _chunkL;
   Float32List? _chunkR;
   Float32List? _inputFlat;
+  bool _preferSnapdragonAcceleration = false;
 
   // --- timing instrumentation (debug only) ---
   final Stopwatch _onnxRunWatch = Stopwatch();
@@ -65,7 +66,9 @@ class UvrSeparationService {
     required String accompanimentOutPath,
     void Function(int progress)? onProgress,
     void Function(int downloadProgress)? onModelDownloadProgress,
+    bool preferSnapdragonAcceleration = false,
   }) async {
+    _preferSnapdragonAcceleration = preferSnapdragonAcceleration;
     onProgress?.call(24);
     _onnxRunWatch.reset();
     _stftWatch.reset();
@@ -543,7 +546,8 @@ class UvrSeparationService {
     // session above still provides shape metadata + the fallback path; if QNN
     // init fails we transparently use ONNX (XNNPACK/CPU).
     _useQnn = false;
-    if (Platform.isAndroid && ProcessingConstants.uvrUseQnnOnAndroid) {
+    if (Platform.isAndroid &&
+        (ProcessingConstants.uvrUseQnnOnAndroid || _preferSnapdragonAcceleration)) {
       _useQnn = await QnnMdxRuntime.instance.init();
     }
 
@@ -616,8 +620,10 @@ class UvrSeparationService {
     // NOTE: Hexagon NPU acceleration is NOT via the ONNX QNN EP — it's the TFLite
     // QNN delegate (QnnMdxRuntime). This ONNX session is only the shape source +
     // CPU fallback, so it just uses XNNPACK/CPU.
-    if (Platform.isAndroid && (unknown || available.contains(OrtProvider.XNNPACK))) {
-      return [OrtProvider.XNNPACK, OrtProvider.CPU];
+    if (Platform.isAndroid) {
+      if (unknown || available.contains(OrtProvider.XNNPACK)) {
+        return [OrtProvider.XNNPACK, OrtProvider.CPU];
+      }
     }
 
     return [OrtProvider.CPU];

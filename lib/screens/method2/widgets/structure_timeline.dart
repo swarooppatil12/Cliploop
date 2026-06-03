@@ -184,7 +184,9 @@ class _StructureTimelineState extends State<StructureTimeline>
                     children: [
                       Row(
                         children: blocks.map((block) {
-                          final width = block.durationSeconds * _pixelsPerSecond;
+                          final flexUnits = (block.durationSeconds * 1000)
+                              .round()
+                              .clamp(1, 999999);
                           final segment = block.segment;
                           final isSelected = segment != null &&
                               segment.id == widget.selectedSegmentId;
@@ -194,7 +196,9 @@ class _StructureTimelineState extends State<StructureTimeline>
                                   widget.position.inMilliseconds / 1000 <=
                                       block.endSeconds;
 
-                          return AnimatedBuilder(
+                          return Expanded(
+                            flex: flexUnits,
+                            child: AnimatedBuilder(
                             animation: _pulseController,
                             builder: (context, child) {
                               final pulse =
@@ -215,7 +219,7 @@ class _StructureTimelineState extends State<StructureTimeline>
                                         );
                                       },
                                 child: Container(
-                                  width: width.clamp(24, double.infinity),
+                                  constraints: const BoxConstraints(minWidth: 8),
                                   decoration: BoxDecoration(
                                     color: color.withValues(
                                       alpha: block.type == SegmentType.unknown
@@ -249,6 +253,7 @@ class _StructureTimelineState extends State<StructureTimeline>
                                 ),
                               );
                             },
+                          ),
                           );
                         }).toList(),
                       ),
