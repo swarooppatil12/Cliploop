@@ -11,15 +11,13 @@ import 'sherpa_bindings.dart';
 /// Open-source Silero VAD (ONNX) — voice activity for structure detection.
 ///
 /// Tuned for sung vocals (Tamil/Indian film songs, etc.), not only speech.
+/// Uses a strict primary pass; a softer secondary pass only when coverage is low.
 class SileroVadService {
   SileroVadService._();
 
   static final SileroVadService instance = SileroVadService._();
 
   static const int vadSampleRate = 16000;
-
-  /// Music-friendly thresholds (singing is softer / more sustained than speech).
-  static const List<double> _musicThresholds = [0.22, 0.16, 0.12];
 
   /// Returns vocal-present regions as `(startSeconds, endSeconds)` in song time.
   Future<List<(double, double)>> detectVocalRegions({
@@ -39,20 +37,32 @@ class SileroVadService {
     }
 
     final durationSeconds = resampled.length / vadSampleRate;
-    final allRegions = <(double, double)>[];
 
-    for (final threshold in _musicThresholds) {
-      final pass = await _runPass(
-        resampled: resampled,
-        durationSeconds: durationSeconds,
-        modelPath: modelPath,
-        threshold: threshold,
+    final primary = await _runPass(
+      resampled: resampled,
+      durationSeconds: durationSeconds,
+      modelPath: modelPath,
+      threshold: ProcessingConstants.sileroVadPrimaryThreshold,
+    );
+
+    final primaryCoverage = coverageFraction(primary, durationSeconds);
+    if (primaryCoverage >= ProcessingConstants.minVadCoverageFraction) {
+      return RegionUtils.merge(
+        primary,
+        gap: ProcessingConstants.vocalRegionMergeGapSeconds,
       );
-      allRegions.addAll(pass);
     }
 
+    final secondary = await _runPass(
+      resampled: resampled,
+      durationSeconds: durationSeconds,
+      modelPath: modelPath,
+      threshold: ProcessingConstants.sileroVadSecondaryThreshold,
+    );
+
+    final merged = <(double, double)>[...primary, ...secondary];
     return RegionUtils.merge(
-      allRegions,
+      merged,
       gap: ProcessingConstants.vocalRegionMergeGapSeconds,
     );
   }
@@ -67,8 +77,8 @@ class SileroVadService {
       sileroVad: SileroVadModelConfig(
         model: modelPath,
         threshold: threshold,
-        minSilenceDuration: 0.28,
-        minSpeechDuration: 0.12,
+        minSilenceDuration: 0.42,
+        minSpeechDuration: 0.28,
         maxSpeechDuration: math.max(180.0, durationSeconds + 10),
       ),
       sampleRate: vadSampleRate,

@@ -79,10 +79,10 @@ flutter_launcher_icons:
 
 # The following section is specific to Flutter packages.
 flutter:
-  # LLDB attach over wireless iOS is slow and often times out (75s+ VM service
-  # discovery). Disabling keeps hot reload via Dart VM; use USB for breakpoints.
+  # Use LLDB + devicectl on iOS 17+ (Xcode 26+) instead of Xcode GUI automation,
+  # which times out on CONFIGURATION_BUILD_DIR. Keep the phone on USB for reliability.
   config:
-    enable-lldb-debugging: false
+    enable-lldb-debugging: true
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
